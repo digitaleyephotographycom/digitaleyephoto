@@ -155,31 +155,23 @@ export default function GalleryDetail() {
     }
   }
 
-  if (!gallery) {
-    return (
-      <div className="admin-wrap">
-        <div className="empty">Loading…</div>
-      </div>
-    );
-  }
-
-  const photos = gallery.photos || [];
-  const selections = new Set(gallery.selections || []);
+  const photos = gallery?.photos || [];
+  const selections = new Set(gallery?.selections || []);
   const selectedPhotos = photos.filter((p) => selections.has(p.id));
   const unselectedPhotos = photos.filter((p) => !selections.has(p.id));
-  const status = gallery.status || "ACTIVE";
-  const isLocked = Boolean(gallery.selectionLocked);
+  const status = gallery?.status || "ACTIVE";
+  const isLocked = Boolean(gallery?.selectionLocked);
 
   let displayedPhotos = photos;
   if (tab === "selected") displayedPhotos = selectedPhotos;
   else if (tab === "unselected") displayedPhotos = unselectedPhotos;
 
-  // Reset batch count on tab switch
+  // Reset batch count on tab switch (unconditional hook)
   useEffect(() => {
     setVisibleCount(BATCH_SIZE);
   }, [tab]);
 
-  // Progressive batch loading sentinel
+  // Progressive batch loading sentinel (unconditional hook)
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -196,6 +188,14 @@ export default function GalleryDetail() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [displayedPhotos.length]);
+
+  if (!gallery) {
+    return (
+      <div className="admin-wrap">
+        <div className="empty">Loading…</div>
+      </div>
+    );
+  }
 
   const renderedPhotos = displayedPhotos.slice(0, visibleCount);
 
