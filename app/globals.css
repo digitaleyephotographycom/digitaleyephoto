@@ -122,7 +122,10 @@ button{cursor:pointer}
 .password-toggle-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;padding:6px;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;border-radius:8px;transition:.18s}
 .password-toggle-btn:hover{color:var(--brown);background:rgba(91,65,48,.08)}
 
+.mobile-client-tabs{display:none}
+
 .client-management-grid{display:grid;grid-template-columns:1.8fr 1.1fr;gap:22px;align-items:start}
+.client-col-current,.client-col-completed{display:block}
 .client-col-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
 .client-col-header h3{margin:0;font-size:16px;letter-spacing:-.2px}
 .client-col-header span{font-size:11px;color:var(--muted);font-weight:600}
@@ -144,8 +147,49 @@ button{cursor:pointer}
 .completed-item{padding:12px 14px;background:#fffaf2;border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;font-weight:600;color:var(--brown)}
 .completed-dot{width:7px;height:7px;border-radius:50%;background:#88a071;flex-shrink:0}
 
+@keyframes clientTabFadeIn{
+  from{opacity:0;transform:translateY(5px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
 @media(max-width:860px){
- .client-management-grid{grid-template-columns:1fr;gap:24px}
+ .mobile-client-tabs{
+   display:flex;
+   gap:6px;
+   width:100%;
+   margin:0 0 16px;
+   background:rgba(91,65,48,.08);
+   padding:5px;
+   border-radius:14px;
+   box-sizing:border-box;
+ }
+ .mobile-tab-btn{
+   flex:1;
+   text-align:center;
+   padding:10px 14px;
+   border-radius:10px;
+   font-size:13px;
+   font-weight:700;
+   font-family:inherit;
+   border:1px solid transparent;
+   background:transparent;
+   color:var(--muted);
+   cursor:pointer;
+   transition:all .18s ease;
+   -webkit-tap-highlight-color:transparent;
+ }
+ .mobile-tab-btn.active{
+   background:#fffaf2;
+   color:var(--brown);
+   border-color:var(--line);
+   box-shadow:0 3px 12px rgba(60,40,25,.1);
+ }
+ .toolbar.mobile-hide-on-completed{display:none}
+ .client-management-grid{display:block;touch-action:pan-y}
+ .client-management-grid.mobile-show-current .client-col-current{display:block;animation:clientTabFadeIn .22s ease-out}
+ .client-management-grid.mobile-show-current .client-col-completed{display:none}
+ .client-management-grid.mobile-show-completed .client-col-current{display:none}
+ .client-management-grid.mobile-show-completed .client-col-completed{display:block;animation:clientTabFadeIn .22s ease-out}
 }
 @media(max-width:820px){
  .landing-inner{grid-template-columns:1fr}.hero-art{min-height:330px}.role-cards{grid-template-columns:1fr}

@@ -29,6 +29,36 @@ export default function StudioDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [sortBy, setSortBy] = useState("newest");
+  const [mobileClientTab, setMobileClientTab] = useState("CURRENT"); // 'CURRENT' | 'COMPLETED'
+
+  const touchStartXRef = useRef(null);
+  const touchStartYRef = useRef(null);
+
+  function handleTouchStart(e) {
+    if (!e.touches || e.touches.length === 0) return;
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+  }
+
+  function handleTouchEnd(e) {
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    if (!e.changedTouches || e.changedTouches.length === 0) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+
+    // Detect horizontal swipe (> 45px and predominantly horizontal)
+    if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
+      if (deltaX < 0) {
+        // Swiped left: Current Clients -> Completed Clients
+        setMobileClientTab("COMPLETED");
+      } else {
+        // Swiped right: Completed Clients -> Current Clients
+        setMobileClientTab("CURRENT");
+      }
+    }
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+  }
 
   async function loadGalleries() {
     const res = await fetch("/api/galleries");
@@ -262,9 +292,6 @@ export default function StudioDashboard() {
           <div className="topbar-sub">Private gallery studio</div>
         </div>
         <div className="topbar-right">
-          <button className="btn btn-ghost" onClick={handleLogout}>
-            Logout
-          </button>
           <Link href="/" className="btn btn-ghost">
             Exit
           </Link>
@@ -422,15 +449,37 @@ export default function StudioDashboard() {
         {/* Client Galleries Management Panel */}
         <div className="panel">
           <div className="section-title">
-            <h2>CLIENT GALLERIES</h2>
+            <h2>CLIENT GALLERY</h2>
             <span>
               {galleries.filter((g) => (g.status || "ACTIVE") !== "COMPLETED").length} active ·{" "}
               {galleries.filter((g) => (g.status || "ACTIVE") === "COMPLETED").length} completed
             </span>
           </div>
 
+          {/* Mobile Tab Switcher */}
+          <div className="mobile-client-tabs" role="tablist" aria-label="Client gallery tabs">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mobileClientTab === "CURRENT"}
+              className={`mobile-tab-btn ${mobileClientTab === "CURRENT" ? "active" : ""}`}
+              onClick={() => setMobileClientTab("CURRENT")}
+            >
+              Current Clients
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mobileClientTab === "COMPLETED"}
+              className={`mobile-tab-btn ${mobileClientTab === "COMPLETED" ? "active" : ""}`}
+              onClick={() => setMobileClientTab("COMPLETED")}
+            >
+              Completed Clients
+            </button>
+          </div>
+
           {/* Search, Filter & Sort Toolbar */}
-          <div className="toolbar">
+          <div className={`toolbar ${mobileClientTab === "COMPLETED" ? "mobile-hide-on-completed" : ""}`}>
             <div className="toolbar-search">
               <input
                 type="text"
@@ -472,9 +521,13 @@ export default function StudioDashboard() {
           </div>
 
           {/* Two-Column Client Management Grid */}
-          <div className="client-management-grid">
+          <div
+            className={`client-management-grid mobile-show-${mobileClientTab.toLowerCase()}`}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
             {/* COLUMN 1: CURRENT CLIENTS */}
-            <div>
+            <div className="client-col-current">
               <div className="client-col-header">
                 <h3>CURRENT CLIENTS</h3>
                 <span>
@@ -597,7 +650,7 @@ export default function StudioDashboard() {
                               <span className="status-squircle status-squircle-draft">Draft</span>
                             ) : (
                               <span className="status-squircle status-squircle-muted">
-                                Not Selected
+                                Not Selected Yet
                               </span>
                             )}
 
@@ -618,10 +671,10 @@ export default function StudioDashboard() {
             </div>
 
             {/* COLUMN 2: COMPLETED */}
-            <div>
+            <div className="client-col-completed">
               <div className="completed-panel">
                 <div className="client-col-header">
-                  <h3>COMPLETED</h3>
+                  <h3>COMPLETED CLIENTS</h3>
                   <span>
                     {galleries.filter((g) => (g.status || "ACTIVE") === "COMPLETED").length}
                   </span>
