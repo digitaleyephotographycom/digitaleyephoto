@@ -16,7 +16,9 @@ async function resolvePhotoUrls(photos, token) {
         } catch {}
       }
       if (!thumbUrl && p.key) {
-        thumbUrl = `/api/photos/thumb?key=${encodeURIComponent(p.key)}&token=${encodeURIComponent(token)}&w=600`;
+        try {
+          thumbUrl = await signedUrlFor(p.key, 7200);
+        } catch {}
       }
       return {
         id: p.id,

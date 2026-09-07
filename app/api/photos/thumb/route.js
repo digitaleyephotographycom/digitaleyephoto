@@ -116,48 +116,69 @@ export async function GET(req) {
     }
 
     // 3. Fetch original from B2 and resize with sharp
-    const origRes = await client.send(
-      new GetObjectCommand({ Bucket: bucket, Key: key })
-    );
+    let origRes;
+    try {
+      origRes = await client.send(
+        new GetObjectCommand({ Bucket: bucket, Key: key })
+      );
+    } catch (s3Err) {
+      if (s3Err?.name === "NoSuchKey" || s3Err?.$metadata?.httpStatusCode === 404) {
+        return new NextResponse("Photo not found", { status: 404 });
+      }
+      throw s3Err;
+    }
+
     const chunks = [];
     for await (const chunk of origRes.Body) {
       chunks.push(chunk);
     }
     const origBuffer = Buffer.concat(chunks);
 
-    const resizedBuffer = await sharp(origBuffer)
-      .rotate() // Auto-orient according to EXIF
-      .resize({
-        width,
-        withoutEnlargement: true,
-        fit: "inside",
-      })
-      .webp({ quality })
-      .toBuffer();
+    let outputBuffer;
+    let contentType = "image/webp";
 
-    setCached(cacheKey, resizedBuffer);
-
-    // Asynchronously save generated thumbnail back to B2 for future 0-CPU retrieval
-    client
-      .send(
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: persistentThumbKey,
-          Body: resizedBuffer,
-          ContentType: "image/webp",
+    try {
+      outputBuffer = await sharp(origBuffer)
+        .rotate() // Auto-orient according to EXIF
+        .resize({
+          width,
+          withoutEnlargement: true,
+          fit: "inside",
         })
-      )
-      .catch(() => {});
+        .webp({ quality })
+        .toBuffer();
 
-    return new NextResponse(resizedBuffer, {
+      setCached(cacheKey, outputBuffer);
+
+      // Asynchronously save generated thumbnail back to B2 for future 0-CPU retrieval
+      client
+        .send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: persistentThumbKey,
+            Body: outputBuffer,
+            ContentType: "image/webp",
+          })
+        )
+        .catch(() => {});
+    } catch (sharpErr) {
+      console.warn("Sharp resize fallback to original buffer:", sharpErr?.message);
+      outputBuffer = origBuffer;
+      contentType = origRes.ContentType || "image/jpeg";
+    }
+
+    return new NextResponse(outputBuffer, {
       headers: {
-        "Content-Type": "image/webp",
+        "Content-Type": contentType,
         "Cache-Control": "private, max-age=86400, stale-while-revalidate=604800",
         "Vary": "Accept",
       },
     });
   } catch (err) {
     console.error("Thumbnail generation error:", err);
+    if (err?.name === "NoSuchKey" || err?.$metadata?.httpStatusCode === 404) {
+      return new NextResponse("Photo not found", { status: 404 });
+    }
     return new NextResponse("Failed to process thumbnail", { status: 500 });
   }
 }

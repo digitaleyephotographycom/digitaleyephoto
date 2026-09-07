@@ -16,14 +16,13 @@ export async function GET(req) {
     const galleries = await Promise.all(
       (index.galleries || []).map(async (g) => {
         let coverUrl = null;
-        if (g.coverThumbKey) {
+        const keyToSign = g.coverThumbKey || g.coverKey;
+        if (keyToSign) {
           try {
-            coverUrl = await signedUrlFor(g.coverThumbKey, 7200);
+            coverUrl = await signedUrlFor(keyToSign, 7200);
           } catch {
             coverUrl = null;
           }
-        } else if (g.coverKey) {
-          coverUrl = `/api/photos/thumb?key=${encodeURIComponent(g.coverKey)}&w=450`;
         }
         return {
           ...g,

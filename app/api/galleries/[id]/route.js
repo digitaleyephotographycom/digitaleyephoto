@@ -21,6 +21,8 @@ export async function GET(req, { params }) {
     if (!gallery) {
       return NextResponse.json({ error: "Gallery not found." }, { status: 404 });
     }
+
+    const { passwordHash, ...safe } = gallery;
     safe.photos = await Promise.all(
       (safe.photos || []).map(async (photo) => {
         let thumbUrl = null;
@@ -30,7 +32,9 @@ export async function GET(req, { params }) {
           } catch {}
         }
         if (!thumbUrl && photo.key) {
-          thumbUrl = `/api/photos/thumb?key=${encodeURIComponent(photo.key)}&w=600`;
+          try {
+            thumbUrl = await signedUrlFor(photo.key, 7200);
+          } catch {}
         }
         return {
           ...photo,
