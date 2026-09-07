@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback, memo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -12,15 +12,31 @@ const STATUS_LABELS = {
   ARCHIVED: "Archived",
 };
 
+const BATCH_SIZE = 24;
+
+const AdminPhotoTile = memo(function AdminPhotoTile({ photo, isSelected }) {
+  const imageUrl = photo.thumbUrl || photo.url;
+  return (
+    <div className="photo-tile">
+      <img src={imageUrl} alt={photo.name} loading="lazy" decoding="async" />
+      {isSelected && <div className="sel-chip">SELECTED</div>}
+    </div>
+  );
+});
+
 export default function GalleryDetail() {
   const { id } = useParams();
   const router = useRouter();
   const [gallery, setGallery] = useState(null);
   const [tab, setTab] = useState("all"); // "all" | "selected" | "unselected"
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
   const [zipping, setZipping] = useState(false);
   const [toast, setToast] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [updating, setUpdating] = useState(false);
+
+  const toastTimerRef = useRef(null);
+  const sentinelRef = useRef(null);
 
   async function load() {
     const res = await fetch(`/api/galleries/${id}`);
@@ -40,10 +56,17 @@ export default function GalleryDetail() {
     load();
   }, [id]);
 
-  function showToast(msg) {
+  const showToast = useCallback((msg) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(msg);
-    setTimeout(() => setToast(""), 2800);
-  }
+    toastTimerRef.current = setTimeout(() => setToast(""), 2800);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   async function updateGallery(patch) {
     setUpdating(true);
@@ -150,6 +173,31 @@ export default function GalleryDetail() {
   let displayedPhotos = photos;
   if (tab === "selected") displayedPhotos = selectedPhotos;
   else if (tab === "unselected") displayedPhotos = unselectedPhotos;
+
+  // Reset batch count on tab switch
+  useEffect(() => {
+    setVisibleCount(BATCH_SIZE);
+  }, [tab]);
+
+  // Progressive batch loading sentinel
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + BATCH_SIZE, displayedPhotos.length));
+        }
+      },
+      { rootMargin: "600px 0px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [displayedPhotos.length]);
+
+  const renderedPhotos = displayedPhotos.slice(0, visibleCount);
 
   return (
     <>
@@ -307,17 +355,26 @@ export default function GalleryDetail() {
               : "No photos uploaded yet."}
           </div>
         ) : (
-          <div className="photo-grid">
-            {displayedPhotos.map((p) => {
-              const isSel = selections.has(p.id);
-              return (
-                <div key={p.id} className="photo-tile">
-                  <img src={p.url} alt={p.name} loading="lazy" />
-                  {isSel && <div className="sel-chip">SELECTED</div>}
-                </div>
-              );
-            })}
-          </div>
+          <>
+            <div className="photo-grid">
+              {renderedPhotos.map((p) => (
+                <AdminPhotoTile
+                  key={p.id}
+                  photo={p}
+                  isSelected={selections.has(p.id)}
+                />
+              ))}
+            </div>
+
+            {visibleCount < displayedPhotos.length && (
+              <div
+                ref={sentinelRef}
+                style={{ height: 40, margin: "20px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}
+              >
+                Loading more photos…
+              </div>
+            )}
+          </>
         )}
       </div>
 

@@ -1,21 +1,72 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
+
+const BATCH_SIZE = 24;
+
+// Memoized PhotoTile to guarantee 0ms selection toggle without re-rendering the whole grid
+const PhotoTile = memo(function PhotoTile({ photo, isSelected, isLocked, onToggle }) {
+  const handleClick = useCallback(() => {
+    onToggle(photo.id);
+  }, [onToggle, photo.id]);
+
+  const imageUrl = photo.thumbUrl || photo.url;
+
+  return (
+    <div
+      className={`ptile ${isSelected ? "selected" : ""}`}
+      style={isLocked ? { cursor: "default" } : {}}
+      onClick={handleClick}
+    >
+      <img
+        src={imageUrl}
+        alt={photo.name}
+        loading="lazy"
+        decoding="async"
+      />
+      <div className="check">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path
+            d="M4 12.5L9.5 18L20 6"
+            stroke="#3b2a20"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+    </div>
+  );
+});
 
 export default function GalleryView() {
   const router = useRouter();
   const [gallery, setGallery] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [activeTab, setActiveTab] = useState("all"); // "all" | "selected"
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState("");
 
-  function showToast(msg) {
+  const toastTimerRef = useRef(null);
+  const syncTimerRef = useRef(null);
+  const sentinelRef = useRef(null);
+
+  const showToast = useCallback((msg) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(msg);
-    setTimeout(() => setToast(""), 3000);
-  }
+    toastTimerRef.current = setTimeout(() => setToast(""), 3000);
+  }, []);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("gallery_data");
@@ -61,7 +112,8 @@ export default function GalleryView() {
     }
   }, [router]);
 
-  async function persistSelections(nextSet) {
+  // Debounced server selection persistence
+  const persistSelections = useCallback(async (nextSet) => {
     const token = sessionStorage.getItem("gallery_token");
     if (!token) return;
     try {
@@ -75,11 +127,18 @@ export default function GalleryView() {
         if (data.error) showToast(data.error);
       }
     } catch {
-      // ignore transient network glitches for auto-sync
+      // Ignore transient network glitches for background sync
     }
-  }
+  }, [showToast]);
 
-  function toggle(id) {
+  const queueSync = useCallback((nextSet) => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      persistSelections(nextSet);
+    }, 400);
+  }, [persistSelections]);
+
+  const toggle = useCallback((id) => {
     if (gallery?.selectionLocked) {
       showToast("Selections are currently locked by your photographer.");
       return;
@@ -90,11 +149,40 @@ export default function GalleryView() {
       if (next.has(id)) next.delete(id);
       else next.add(id);
 
-      // Persist selection change to server
-      persistSelections(next);
+      // Debounced persistence to avoid concurrent hammering
+      queueSync(next);
       return next;
     });
-  }
+  }, [gallery?.selectionLocked, showToast, queueSync]);
+
+  // Reset progressive batch count on tab switch
+  useEffect(() => {
+    setVisibleCount(BATCH_SIZE);
+  }, [activeTab]);
+
+  const photos = gallery?.photos || [];
+  const selectedPhotos = photos.filter((p) => selected.has(p.id));
+  const displayedPhotos = activeTab === "selected" ? selectedPhotos : photos;
+  const isLocked = Boolean(gallery?.selectionLocked);
+  const isSubmitted = gallery?.selectionStatus === "SUBMITTED";
+
+  // Incremental batch sentinel using a single IntersectionObserver
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => Math.min(prev + BATCH_SIZE, displayedPhotos.length));
+        }
+      },
+      { rootMargin: "600px 0px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [displayedPhotos.length]);
 
   async function handleSubmitSelection() {
     setSubmitting(true);
@@ -132,11 +220,7 @@ export default function GalleryView() {
 
   if (!gallery) return null;
 
-  const photos = gallery.photos || [];
-  const selectedPhotos = photos.filter((p) => selected.has(p.id));
-  const displayedPhotos = activeTab === "selected" ? selectedPhotos : photos;
-  const isLocked = Boolean(gallery.selectionLocked);
-  const isSubmitted = gallery.selectionStatus === "SUBMITTED";
+  const renderedPhotos = displayedPhotos.slice(0, visibleCount);
 
   return (
     <>
@@ -207,31 +291,26 @@ export default function GalleryView() {
         )}
 
         <div className="client-grid">
-          {displayedPhotos.map((p) => {
-            const isSel = selected.has(p.id);
-            return (
-              <div
-                key={p.id}
-                className={`ptile ${isSel ? "selected" : ""}`}
-                style={isLocked ? { cursor: "default" } : {}}
-                onClick={() => toggle(p.id)}
-              >
-                <img src={p.url} alt={p.name} loading="lazy" decoding="async" />
-                <div className="check">
-                  <svg viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M4 12.5L9.5 18L20 6"
-                      stroke="#3b2a20"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-              </div>
-            );
-          })}
+          {renderedPhotos.map((p) => (
+            <PhotoTile
+              key={p.id}
+              photo={p}
+              isSelected={selected.has(p.id)}
+              isLocked={isLocked}
+              onToggle={toggle}
+            />
+          ))}
         </div>
+
+        {/* Sentinel for progressive batch appending */}
+        {visibleCount < displayedPhotos.length && (
+          <div
+            ref={sentinelRef}
+            style={{ height: 40, margin: "20px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}
+          >
+            Loading more photos…
+          </div>
+        )}
       </div>
 
       {/* Floating Selection Bar */}

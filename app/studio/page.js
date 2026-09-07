@@ -49,16 +49,56 @@ export default function StudioDashboard() {
     loadGalleries();
   }, []);
 
+  const toastTimerRef = useRef(null);
+
   function showToast(msg) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(msg);
-    setTimeout(() => setToast(""), 2600);
+    toastTimerRef.current = setTimeout(() => setToast(""), 2600);
   }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   function handleFiles(list) {
     setFiles((prev) => [...prev, ...Array.from(list)]);
   }
 
   const [uploadProgress, setUploadProgress] = useState(null);
+
+  async function createClientThumbnail(file, maxWidth = 800, quality = 0.82) {
+    return new Promise((resolve) => {
+      if (!file || !file.type.startsWith("image/")) return resolve(null);
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        try {
+          const maxDim = Math.max(img.width, img.height);
+          const scale = maxDim > maxWidth ? maxWidth / maxDim : 1;
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return resolve(null);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => resolve(blob), "image/webp", quality);
+        } catch {
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      };
+      img.src = url;
+    });
+  }
 
   async function createGallery() {
     if (!name.trim() || !password.trim()) {
@@ -120,6 +160,7 @@ export default function StudioDashboard() {
           if (!task) break;
           const { item, file } = task;
 
+          // 2a. Upload original 4K photo directly to Backblaze B2
           const uploadRes = await fetch(item.uploadUrl, {
             method: "PUT",
             headers: { "Content-Type": file.type || "application/octet-stream" },
@@ -129,6 +170,22 @@ export default function StudioDashboard() {
             throw new Error(`Failed to upload ${file.name} to storage.`);
           }
 
+          // 2b. Generate and upload lightweight WebP thumbnail directly to B2
+          if (item.thumbUploadUrl) {
+            try {
+              const thumbBlob = await createClientThumbnail(file, 800, 0.82);
+              if (thumbBlob) {
+                await fetch(item.thumbUploadUrl, {
+                  method: "PUT",
+                  headers: { "Content-Type": "image/webp" },
+                  body: thumbBlob,
+                });
+              }
+            } catch (thumbErr) {
+              console.warn("Client thumbnail upload skipped for", file.name, thumbErr);
+            }
+          }
+
           completed++;
           const pct = Math.round((completed / files.length) * 100);
           setUploadProgress({ text: `Uploading ${completed} of ${files.length} (${pct}%)…` });
@@ -136,6 +193,7 @@ export default function StudioDashboard() {
           uploadedPhotos.push({
             photoId: item.photoId,
             key: item.key,
+            thumbKey: item.thumbKey,
             name: file.name,
           });
         }
@@ -416,7 +474,7 @@ export default function StudioDashboard() {
               return (
                 <Link key={g.id} href={`/studio/${g.id}`} className="gcard">
                   <div className="cover">
-                    {g.coverUrl ? <img src={g.coverUrl} alt="" /> : <span>No photos yet</span>}
+                    {g.coverUrl ? <img src={g.coverUrl} alt="" loading="lazy" decoding="async" /> : <span>No photos yet</span>}
                   </div>
                   {g.selectionCount > 0 && <div className="badge">{g.selectionCount} selected</div>}
                   <div className="meta">

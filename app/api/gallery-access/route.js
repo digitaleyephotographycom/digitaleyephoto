@@ -6,6 +6,28 @@ import { signedUrlFor } from "@/lib/b2";
 
 export const runtime = "nodejs";
 
+async function resolvePhotoUrls(photos, token) {
+  return Promise.all(
+    (photos || []).map(async (p) => {
+      let thumbUrl = null;
+      if (p.thumbKey) {
+        try {
+          thumbUrl = await signedUrlFor(p.thumbKey, 7200);
+        } catch {}
+      }
+      if (!thumbUrl && p.key) {
+        thumbUrl = `/api/photos/thumb?key=${encodeURIComponent(p.key)}&token=${encodeURIComponent(token)}&w=600`;
+      }
+      return {
+        id: p.id,
+        name: p.name,
+        thumbUrl,
+        url: thumbUrl,
+      };
+    })
+  );
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -35,13 +57,7 @@ export async function POST(req) {
         );
       }
 
-      const photos = await Promise.all(
-        (gallery.photos || []).map(async (p) => ({
-          id: p.id,
-          name: p.name,
-          url: p.key ? await signedUrlFor(p.key, 3600) : null,
-        }))
-      );
+      const photos = await resolvePhotoUrls(gallery.photos, token);
       return NextResponse.json({
         token,
         gallery: {
@@ -100,14 +116,8 @@ export async function POST(req) {
 
     const sessionToken = signToken(gallery.id);
 
-    // Generate fresh short-lived signed GET URLs for client photo viewing
-    const photos = await Promise.all(
-      (gallery.photos || []).map(async (p) => ({
-        id: p.id,
-        name: p.name,
-        url: p.key ? await signedUrlFor(p.key, 3600) : null,
-      }))
-    );
+    // Generate fresh short-lived signed GET URLs for optimized client photo viewing
+    const photos = await resolvePhotoUrls(gallery.photos, sessionToken);
 
     return NextResponse.json({
       token: sessionToken,

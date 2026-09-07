@@ -27,17 +27,31 @@ export async function POST(req, { params }) {
           const photoId = newId("p");
           const safeName = (f.fileName || "photo.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
           const key = `galleries/${params.id}/${photoId}-${safeName}`;
-          const command = new PutObjectCommand({
+          const thumbKey = `galleries/${params.id}/thumbs/${photoId}.webp`;
+
+          const origCommand = new PutObjectCommand({
             Bucket: bucket,
             Key: key,
             ContentType: f.contentType || "image/jpeg",
           });
-          const uploadUrl = await getSignedUrl(client, command, { expiresIn: 1800 });
+          const thumbCommand = new PutObjectCommand({
+            Bucket: bucket,
+            Key: thumbKey,
+            ContentType: "image/webp",
+          });
+
+          const [uploadUrl, thumbUploadUrl] = await Promise.all([
+            getSignedUrl(client, origCommand, { expiresIn: 1800 }),
+            getSignedUrl(client, thumbCommand, { expiresIn: 1800 }),
+          ]);
+
           return {
             photoId,
             key,
+            thumbKey,
             fileName: f.fileName,
             uploadUrl,
+            thumbUploadUrl,
           };
         })
       );
@@ -49,17 +63,29 @@ export async function POST(req, { params }) {
     const photoId = newId("p");
     const safeName = (fileName || "photo.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
     const key = `galleries/${params.id}/${photoId}-${safeName}`;
+    const thumbKey = `galleries/${params.id}/thumbs/${photoId}.webp`;
 
     const command = new PutObjectCommand({
       Bucket: bucket,
       Key: key,
       ContentType: contentType || "image/jpeg",
     });
-    const uploadUrl = await getSignedUrl(client, command, { expiresIn: 1800 });
+    const thumbCommand = new PutObjectCommand({
+      Bucket: bucket,
+      Key: thumbKey,
+      ContentType: "image/webp",
+    });
+
+    const [uploadUrl, thumbUploadUrl] = await Promise.all([
+      getSignedUrl(client, command, { expiresIn: 1800 }),
+      getSignedUrl(client, thumbCommand, { expiresIn: 1800 }),
+    ]);
 
     return NextResponse.json({
       uploadUrl,
+      thumbUploadUrl,
       key,
+      thumbKey,
       photoId,
     });
   } catch (err) {

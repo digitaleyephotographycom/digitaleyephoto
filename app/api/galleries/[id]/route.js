@@ -21,12 +21,23 @@ export async function GET(req, { params }) {
     if (!gallery) {
       return NextResponse.json({ error: "Gallery not found." }, { status: 404 });
     }
-    const { passwordHash, ...safe } = gallery;
     safe.photos = await Promise.all(
-      (safe.photos || []).map(async (photo) => ({
-        ...photo,
-        url: photo.key ? await signedUrlFor(photo.key, 3600) : null,
-      }))
+      (safe.photos || []).map(async (photo) => {
+        let thumbUrl = null;
+        if (photo.thumbKey) {
+          try {
+            thumbUrl = await signedUrlFor(photo.thumbKey, 7200);
+          } catch {}
+        }
+        if (!thumbUrl && photo.key) {
+          thumbUrl = `/api/photos/thumb?key=${encodeURIComponent(photo.key)}&w=600`;
+        }
+        return {
+          ...photo,
+          thumbUrl,
+          url: thumbUrl,
+        };
+      })
     );
     return NextResponse.json(safe);
   } catch (err) {

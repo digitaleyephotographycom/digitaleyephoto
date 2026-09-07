@@ -33,6 +33,7 @@ export async function POST(req, { params }) {
         gallery.photos.push({
           id: p.photoId,
           key: p.key,
+          thumbKey: p.thumbKey || null,
           name: p.name || "photo.jpg",
         });
       }
@@ -45,6 +46,7 @@ export async function POST(req, { params }) {
         entry.photoCount = gallery.photos.length;
         if (!entry.coverKey && gallery.photos[0]?.key) {
           entry.coverKey = gallery.photos[0].key;
+          entry.coverThumbKey = gallery.photos[0].thumbKey || null;
         }
       }
       await saveIndex(index);
@@ -53,7 +55,7 @@ export async function POST(req, { params }) {
     }
 
     // Single photo mode (backward compatibility)
-    const { photoId, key, name } = body || {};
+    const { photoId, key, thumbKey, name } = body || {};
 
     if (!photoId || !key) {
       return NextResponse.json(
@@ -65,6 +67,7 @@ export async function POST(req, { params }) {
     gallery.photos.push({
       id: photoId,
       key,
+      thumbKey: thumbKey || null,
       name: name || "photo.jpg",
     });
     await saveGallery(params.id, gallery);
@@ -75,6 +78,7 @@ export async function POST(req, { params }) {
       entry.photoCount = gallery.photos.length;
       if (!entry.coverKey) {
         entry.coverKey = key;
+        entry.coverThumbKey = thumbKey || null;
       }
     }
     await saveIndex(index);
