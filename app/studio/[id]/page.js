@@ -384,7 +384,7 @@ export default function GalleryDetail() {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <h3>Delete this gallery?</h3>
             <p>
-              This will permanently remove the gallery metadata and all uploaded photos from your Backblaze B2 bucket.
+              This will permanently remove the gallery and all uploaded photos.
               This action cannot be undone.
             </p>
             <div className="modal-actions">

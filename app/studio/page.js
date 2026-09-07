@@ -294,8 +294,10 @@ export default function StudioDashboard() {
             <strong>{galleries.reduce((n, g) => n + (g.selectionCount || 0), 0)}</strong>
           </div>
           <div className="stat">
-            <span>Storage</span>
-            <strong style={{ fontSize: 18 }}>Backblaze B2</strong>
+            <span>Completed</span>
+            <strong style={{ fontSize: 28 }}>
+              {galleries.filter((g) => (g.status || "ACTIVE") === "COMPLETED").length}
+            </strong>
           </div>
         </div>
 
@@ -393,7 +395,7 @@ export default function StudioDashboard() {
                 <strong>Click to choose photos</strong>, or drag and drop them here.
               </div>
               <div style={{ marginTop: 6 }}>
-                Originals upload directly to your Backblaze B2 bucket — full 4K quality kept.
+                Upload high-resolution client photos — full pristine quality preserved.
               </div>
             </div>
             <input
@@ -417,11 +419,14 @@ export default function StudioDashboard() {
           </button>
         </div>
 
-        {/* Galleries List Panel */}
+        {/* Client Galleries Management Panel */}
         <div className="panel">
           <div className="section-title">
-            <h2>Your galleries</h2>
-            <span>{filteredGalleries.length} of {galleries.length} total</span>
+            <h2>CLIENT GALLERIES</h2>
+            <span>
+              {galleries.filter((g) => (g.status || "ACTIVE") !== "COMPLETED").length} active ·{" "}
+              {galleries.filter((g) => (g.status || "ACTIVE") === "COMPLETED").length} completed
+            </span>
           </div>
 
           {/* Search, Filter & Sort Toolbar */}
@@ -429,20 +434,25 @@ export default function StudioDashboard() {
             <div className="toolbar-search">
               <input
                 type="text"
-                placeholder="Search by gallery name, customer, or code…"
+                placeholder="Search by client name, gallery, or code…"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
 
             <div className="toolbar-filters">
-              {["ALL", "ACTIVE", "SELECTION_SUBMITTED", "COMPLETED", "DRAFT", "ARCHIVED"].map((st) => (
+              {[
+                { id: "ALL", label: "All" },
+                { id: "DRAFT", label: "Draft" },
+                { id: "SELECTION_SUBMITTED", label: "Selection Submitted" },
+                { id: "NOT_SELECTED_YET", label: "Not Selected Yet" },
+              ].map((tab) => (
                 <button
-                  key={st}
-                  className={`filter-btn ${statusFilter === st ? "active" : ""}`}
-                  onClick={() => setStatusFilter(st)}
+                  key={tab.id}
+                  className={`filter-btn ${statusFilter === tab.id ? "active" : ""}`}
+                  onClick={() => setStatusFilter(tab.id)}
                 >
-                  {st === "ALL" ? "All" : STATUS_LABELS[st] || st}
+                  {tab.label}
                 </button>
               ))}
             </div>
@@ -461,54 +471,207 @@ export default function StudioDashboard() {
             </select>
           </div>
 
-          <div className="gallery-list">
-            {filteredGalleries.length === 0 && (
-              <div className="empty">
-                {galleries.length === 0
-                  ? "No galleries yet — create one above to get a shareable link."
-                  : "No galleries match your search or filter."}
+          {/* Two-Column Client Management Grid */}
+          <div className="client-management-grid">
+            {/* COLUMN 1: CURRENT CLIENTS */}
+            <div>
+              <div className="client-col-header">
+                <h3>CURRENT CLIENTS</h3>
+                <span>
+                  {
+                    galleries
+                      .filter((g) => (g.status || "ACTIVE") !== "COMPLETED")
+                      .filter((g) => {
+                        const st = g.status || "ACTIVE";
+                        const isSub = g.selectionStatus === "SUBMITTED" || st === "SELECTION_SUBMITTED";
+                        if (statusFilter === "DRAFT") return st === "DRAFT";
+                        if (statusFilter === "SELECTION_SUBMITTED") return isSub;
+                        if (statusFilter === "NOT_SELECTED_YET") return !isSub && st !== "DRAFT";
+                        return true;
+                      })
+                      .filter((g) => {
+                        if (searchQuery.trim()) {
+                          const q = searchQuery.toLowerCase().trim();
+                          const nameMatch = (g.name || "").toLowerCase().includes(q);
+                          const custMatch = (g.customerName || "").toLowerCase().includes(q);
+                          const codeMatch = (g.code || "").toLowerCase().includes(q);
+                          if (!nameMatch && !custMatch && !codeMatch) return false;
+                        }
+                        return true;
+                      }).length
+                  }{" "}
+                  clients
+                </span>
               </div>
-            )}
-            {filteredGalleries.map((g) => {
-              const st = g.status || "ACTIVE";
-              return (
-                <Link key={g.id} href={`/studio/${g.id}`} className="gcard">
-                  <div className="cover">
-                    {g.coverUrl ? <img src={g.coverUrl} alt="" loading="lazy" decoding="async" /> : <span>No photos yet</span>}
-                  </div>
-                  {g.selectionCount > 0 && <div className="badge">{g.selectionCount} selected</div>}
-                  <div className="meta">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <span className={`status-badge status-${st}`}>
-                        {STATUS_LABELS[st] || st}
-                      </span>
-                      {g.selectionLocked && (
-                        <span style={{ fontSize: 10, color: "var(--muted)", fontWeight: 600 }}>
-                          🔒 Locked
-                        </span>
-                      )}
-                    </div>
-                    <h4>{g.name}</h4>
-                    {g.customerName && (
-                      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>
-                        Client: <strong>{g.customerName}</strong>
-                      </div>
-                    )}
-                    <div className="tag">
-                      {g.type} · {g.photoCount || 0} photos · code <code>{g.code}</code>
-                      {g.eventDate ? ` · ${g.eventDate}` : ""}
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
 
-        <div className="note-banner">
-          <strong>How storage works here:</strong> full-resolution photos live in your Backblaze B2 bucket.
-          Gallery details — name, hashed password, photo list, client selections — are kept as small JSON
-          files in that same bucket, so there's no separate database to run.
+              {(() => {
+                const currentFiltered = galleries
+                  .filter((g) => (g.status || "ACTIVE") !== "COMPLETED")
+                  .filter((g) => {
+                    const st = g.status || "ACTIVE";
+                    const isSub = g.selectionStatus === "SUBMITTED" || st === "SELECTION_SUBMITTED";
+                    if (statusFilter === "DRAFT") return st === "DRAFT";
+                    if (statusFilter === "SELECTION_SUBMITTED") return isSub;
+                    if (statusFilter === "NOT_SELECTED_YET") return !isSub && st !== "DRAFT";
+                    return true;
+                  })
+                  .filter((g) => {
+                    if (searchQuery.trim()) {
+                      const q = searchQuery.toLowerCase().trim();
+                      const nameMatch = (g.name || "").toLowerCase().includes(q);
+                      const custMatch = (g.customerName || "").toLowerCase().includes(q);
+                      const codeMatch = (g.code || "").toLowerCase().includes(q);
+                      if (!nameMatch && !custMatch && !codeMatch) return false;
+                    }
+                    return true;
+                  })
+                  .sort((a, b) => {
+                    if (sortBy === "newest") return (b.createdAt || 0) - (a.createdAt || 0);
+                    if (sortBy === "oldest") return (a.createdAt || 0) - (b.createdAt || 0);
+                    if (sortBy === "name_asc") return (a.name || "").localeCompare(b.name || "");
+                    if (sortBy === "name_desc") return (b.name || "").localeCompare(a.name || "");
+                    if (sortBy === "photos") return (b.photoCount || 0) - (a.photoCount || 0);
+                    if (sortBy === "selected") return (b.selectionCount || 0) - (a.selectionCount || 0);
+                    return 0;
+                  });
+
+                if (currentFiltered.length === 0) {
+                  return (
+                    <div className="empty">
+                      {galleries.filter((g) => (g.status || "ACTIVE") !== "COMPLETED").length === 0
+                        ? "No current clients yet — create a gallery above to get started."
+                        : "No current clients match your search or filter."}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="client-list-wrap">
+                    {currentFiltered.map((g) => {
+                      const st = g.status || "ACTIVE";
+                      const isSubmitted = g.selectionStatus === "SUBMITTED" || st === "SELECTION_SUBMITTED";
+                      const isDraft = st === "DRAFT";
+                      const displayName = g.customerName ? g.customerName : g.name;
+                      const subName = g.customerName && g.name !== g.customerName ? g.name : "";
+
+                      return (
+                        <div key={g.id} className="client-row">
+                          <div className="client-info">
+                            <div className="client-name">{displayName}</div>
+                            <div className="client-sub">
+                              {subName && <span>{subName} · </span>}
+                              <span>{g.type}</span>
+                              <span>·</span>
+                              <span>{g.photoCount || 0} photos</span>
+                              <span>·</span>
+                              <span>
+                                Code <code>{g.code}</code>
+                              </span>
+                              {g.eventDate && (
+                                <>
+                                  <span>·</span>
+                                  <span>{g.eventDate}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="client-actions">
+                            {isSubmitted ? (
+                              <span className="status-squircle status-squircle-green">
+                                <svg
+                                  width="13"
+                                  height="13"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                                Selection Submitted
+                              </span>
+                            ) : isDraft ? (
+                              <span className="status-squircle status-squircle-draft">Draft</span>
+                            ) : (
+                              <span className="status-squircle status-squircle-muted">
+                                Not Selected
+                              </span>
+                            )}
+
+                            <Link
+                              href={`/studio/${g.id}`}
+                              className="btn btn-primary"
+                              style={{ padding: "8px 18px", fontSize: "12px" }}
+                            >
+                              View
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* COLUMN 2: COMPLETED */}
+            <div>
+              <div className="completed-panel">
+                <div className="client-col-header">
+                  <h3>COMPLETED</h3>
+                  <span>
+                    {galleries.filter((g) => (g.status || "ACTIVE") === "COMPLETED").length}
+                  </span>
+                </div>
+
+                {(() => {
+                  const completed = galleries.filter((g) => (g.status || "ACTIVE") === "COMPLETED");
+                  if (completed.length === 0) {
+                    return (
+                      <div className="empty" style={{ padding: "20px 14px" }}>
+                        No completed clients yet.
+                      </div>
+                    );
+                  }
+                  return (
+                    <ul className="completed-list">
+                      {completed.map((g) => {
+                        const title = g.customerName
+                          ? `${g.customerName}${g.name && g.name !== g.customerName ? ` (${g.name})` : ""}`
+                          : g.name;
+                        return (
+                          <li key={g.id} className="completed-item">
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                              <span className="completed-dot" />
+                              <span
+                                style={{
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {title}
+                              </span>
+                            </div>
+                            <Link
+                              href={`/studio/${g.id}`}
+                              className="btn btn-ghost"
+                              style={{ padding: "4px 8px", fontSize: "11px", flexShrink: 0 }}
+                            >
+                              View
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

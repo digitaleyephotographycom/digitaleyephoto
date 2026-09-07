@@ -6,39 +6,47 @@ import { useRouter } from "next/navigation";
 const BATCH_SIZE = 24;
 
 // Memoized PhotoTile to guarantee 0ms selection toggle without re-rendering the whole grid
-const PhotoTile = memo(function PhotoTile({ photo, isSelected, isLocked, onToggle }) {
-  const handleClick = useCallback(() => {
-    onToggle(photo.id);
-  }, [onToggle, photo.id]);
+const PhotoTile = memo(
+  function PhotoTile({ photo, isSelected, isLocked, isSubmitted, onToggle }) {
+    const handleClick = useCallback(() => {
+      onToggle(photo.id);
+    }, [onToggle, photo.id]);
 
-  const imageUrl = photo.thumbUrl || photo.url;
+    const imageUrl = photo.thumbUrl || photo.url;
 
-  return (
-    <div
-      className={`ptile ${isSelected ? "selected" : ""}`}
-      style={isLocked ? { cursor: "default" } : {}}
-      onClick={handleClick}
-    >
-      <img
-        src={imageUrl}
-        alt={photo.name}
-        loading="lazy"
-        decoding="async"
-      />
-      <div className="check">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path
-            d="M4 12.5L9.5 18L20 6"
-            stroke="#3b2a20"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+    return (
+      <div
+        className={`ptile ${isSelected ? "selected" : ""}`}
+        style={isLocked ? { cursor: "default" } : {}}
+        onClick={handleClick}
+      >
+        <img
+          src={imageUrl}
+          alt={photo.name}
+          loading="lazy"
+          decoding="async"
+        />
+        <div className={`check ${isSubmitted ? "check-submitted" : ""}`}>
+          <svg viewBox="0 0 24 24" fill="none">
+            <path
+              d="M4 12.5L9.5 18L20 6"
+              stroke="#3b2a20"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+  (prev, next) =>
+    prev.photo.id === next.photo.id &&
+    prev.isSelected === next.isSelected &&
+    prev.isLocked === next.isLocked &&
+    prev.isSubmitted === next.isSubmitted &&
+    prev.photo.thumbUrl === next.photo.thumbUrl
+);
 
 export default function GalleryView() {
   const router = useRouter();
@@ -210,7 +218,7 @@ export default function GalleryView() {
         status: data.status || "SELECTION_SUBMITTED",
       }));
       setShowConfirmModal(false);
-      showToast("Your selection has been submitted successfully!");
+      showToast("Your photo selection has been successfully submitted.");
     } catch {
       showToast("Failed to submit selection. Please try again.");
     } finally {
@@ -226,7 +234,26 @@ export default function GalleryView() {
     <>
       <div className="client-header">
         <div>
-          <h1>{gallery.name}</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
+            <h1>{gallery.name}</h1>
+            {isSubmitted && (
+              <span className="status-squircle status-squircle-green" style={{ fontSize: 11, padding: "5px 10px" }}>
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Selection Submitted
+              </span>
+            )}
+          </div>
           <div className="tag">
             {gallery.customerName ? `${gallery.customerName} · ` : ""}
             {gallery.type} · {photos.length} photos
@@ -260,22 +287,45 @@ export default function GalleryView() {
               <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
             <div>
-              <strong>Selection is locked.</strong> Your photographer has locked this gallery for processing. You can still view your selected photos.
+              <strong>Selection finalized & locked.</strong> Your photographer has locked this gallery for album design and print processing. You can view your selected photos.
             </div>
           </div>
         )}
 
         {isSubmitted && (
           <div className="submitted-banner">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-              <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <div
+              className="status-squircle status-squircle-green"
+              style={{ background: "#476133", color: "#fff", border: "none", padding: "6px 8px" }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </div>
             <div>
-              <strong>Selection submitted</strong> — You selected {selected.size} photo{selected.size === 1 ? "" : "s"}
+              <strong>Selection Submitted</strong> — You have selected and submitted{" "}
+              <strong>
+                {selected.size} photo{selected.size === 1 ? "" : "s"}
+              </strong>
               {gallery.selectionSubmittedAt
-                ? ` on ${new Date(gallery.selectionSubmittedAt).toLocaleDateString()}`
+                ? ` on ${new Date(gallery.selectionSubmittedAt).toLocaleDateString(undefined, {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })}`
                 : ""}
-              .{isLocked ? " Your selections are currently locked." : " You can still adjust your selection until the photographer locks it."}
+              . Your photographer has received your shortlisted favorites for your album and prints.
+              {!isLocked &&
+                " You can still adjust your selection and update your submission anytime before production begins."}
             </div>
           </div>
         )}
@@ -297,6 +347,7 @@ export default function GalleryView() {
               photo={p}
               isSelected={selected.has(p.id)}
               isLocked={isLocked}
+              isSubmitted={isSubmitted}
               onToggle={toggle}
             />
           ))}
@@ -317,7 +368,11 @@ export default function GalleryView() {
       <div className={`send-bar ${selected.size > 0 ? "show" : ""}`}>
         <div className="count">
           <strong>{selected.size}</strong> photo{selected.size === 1 ? "" : "s"} selected
-          {isSubmitted && !isLocked && <span style={{ marginLeft: 8, opacity: 0.8 }}>(Submitted)</span>}
+          {isSubmitted && !isLocked && (
+            <span style={{ marginLeft: 8, opacity: 0.9, color: "#c0e69f", fontWeight: 600 }}>
+              (✓ Submitted)
+            </span>
+          )}
         </div>
 
         {isLocked ? (
@@ -341,7 +396,7 @@ export default function GalleryView() {
             <h3>Submit {selected.size} selected photo{selected.size === 1 ? "" : "s"}?</h3>
             <p>
               Your final photo selection will be sent directly to your photographer for printing and album creation.
-              Once received, your selection may be locked for production.
+              You can still make adjustments until your photographer finalizes the production.
             </p>
             <div className="modal-actions">
               <button
@@ -356,7 +411,7 @@ export default function GalleryView() {
                 disabled={submitting}
                 onClick={handleSubmitSelection}
               >
-                {submitting ? "Submitting…" : "Submit selection"}
+                {submitting ? "Submitting…" : "Confirm & submit selection"}
               </button>
             </div>
           </div>
