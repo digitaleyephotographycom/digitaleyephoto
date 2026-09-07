@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { getB2Client, BUCKET } from "@/lib/b2";
+import { getB2Client, getBucket } from "@/lib/b2";
 import { newId } from "@/lib/ids";
 import { requireAdmin } from "@/lib/admin-auth";
 
@@ -18,6 +18,7 @@ export async function POST(req, { params }) {
   try {
     const body = await req.json();
     const client = getB2Client();
+    const bucket = getBucket();
 
     // Batch mode: multiple files in one request
     if (Array.isArray(body?.files)) {
@@ -27,7 +28,7 @@ export async function POST(req, { params }) {
           const safeName = (f.fileName || "photo.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
           const key = `galleries/${params.id}/${photoId}-${safeName}`;
           const command = new PutObjectCommand({
-            Bucket: BUCKET,
+            Bucket: bucket,
             Key: key,
             ContentType: f.contentType || "image/jpeg",
           });
@@ -50,7 +51,7 @@ export async function POST(req, { params }) {
     const key = `galleries/${params.id}/${photoId}-${safeName}`;
 
     const command = new PutObjectCommand({
-      Bucket: BUCKET,
+      Bucket: bucket,
       Key: key,
       ContentType: contentType || "image/jpeg",
     });
@@ -64,7 +65,7 @@ export async function POST(req, { params }) {
   } catch (err) {
     console.error("Failed to generate upload URL:", err);
     return NextResponse.json(
-      { error: "Could not prepare upload. Please try again." },
+      { error: err?.message || "Could not prepare upload. Please try again." },
       { status: 500 }
     );
   }

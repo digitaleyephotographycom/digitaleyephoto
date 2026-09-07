@@ -32,7 +32,7 @@ export async function GET(req, { params }) {
   } catch (err) {
     console.error("Failed to fetch gallery:", err);
     return NextResponse.json(
-      { error: "Could not load gallery." },
+      { error: err?.message || "Could not load gallery." },
       { status: 500 }
     );
   }
@@ -105,7 +105,7 @@ export async function PATCH(req, { params }) {
   } catch (err) {
     console.error("Failed to update gallery:", err);
     return NextResponse.json(
-      { error: "Could not update gallery." },
+      { error: err?.message || "Could not update gallery." },
       { status: 500 }
     );
   }
@@ -138,7 +138,7 @@ export async function DELETE(req, { params }) {
   } catch (err) {
     console.error("Failed to delete gallery:", err);
     return NextResponse.json(
-      { error: "Could not delete gallery." },
+      { error: err?.message || "Could not delete gallery." },
       { status: 500 }
     );
   }

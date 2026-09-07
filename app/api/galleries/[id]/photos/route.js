@@ -83,7 +83,7 @@ export async function POST(req, { params }) {
   } catch (err) {
     console.error("Failed to save photo metadata:", err);
     return NextResponse.json(
-      { error: "Could not save photo metadata." },
+      { error: err?.message || "Could not save photo metadata." },
       { status: 500 }
     );
   }

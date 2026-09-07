@@ -33,7 +33,7 @@ export async function GET(req) {
   } catch (err) {
     console.error("Failed to load galleries index:", err);
     return NextResponse.json(
-      { error: "Could not load galleries." },
+      { error: err?.message || "Could not load galleries." },
       { status: 500 }
     );
   }
@@ -102,7 +102,7 @@ export async function POST(req) {
   } catch (err) {
     console.error("Failed to create gallery:", err);
     return NextResponse.json(
-      { error: "Could not create gallery." },
+      { error: err?.message || "Could not create gallery." },
       { status: 500 }
     );
   }

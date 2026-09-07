@@ -85,8 +85,10 @@ export default function StudioDashboard() {
           status: initialStatus,
         }),
       });
-      const created = await createRes.json();
-      if (!createRes.ok) throw new Error(created.error || "Could not create gallery.");
+      const created = await createRes.json().catch(() => ({}));
+      if (!createRes.ok) {
+        throw new Error(created.error || `Could not create gallery (Server error ${createRes.status}).`);
+      }
 
       // Step 1: Request all upload URLs in a single fast batch
       setUploadProgress({ text: `Preparing ${files.length} uploads…` });
@@ -99,9 +101,9 @@ export default function StudioDashboard() {
       });
       if (!urlRes.ok) {
         const errData = await urlRes.json().catch(() => ({}));
-        throw new Error(errData.error || "Could not prepare uploads.");
+        throw new Error(errData.error || `Could not prepare uploads (Server error ${urlRes.status}).`);
       }
-      const { items } = await urlRes.json();
+      const { items } = await urlRes.json().catch(() => ({}));
       if (!items || items.length === 0) {
         throw new Error("No upload URLs generated.");
       }
