@@ -29,15 +29,25 @@ export async function POST(req) {
     }
 
     // Verify email/username matches configured admin identity
-    if (identifier.toLowerCase() !== configuredEmail.toLowerCase()) {
+    const emailMatch =
+      identifier.toLowerCase() === configuredEmail.toLowerCase() ||
+      identifier.toLowerCase() === configuredEmail.split("@")[0].toLowerCase();
+
+    if (!emailMatch) {
       return NextResponse.json(
         { error: "Invalid admin credentials." },
         { status: 401 }
       );
     }
 
-    // Verify password against secure bcrypt hash
-    const isValid = await bcrypt.compare(password, configuredHash);
+    // Verify password against secure bcrypt hash or configured password
+    let isValid = false;
+    if (configuredHash.startsWith("$2")) {
+      isValid = await bcrypt.compare(password, configuredHash);
+    } else {
+      isValid = (password === configuredHash);
+    }
+
     if (!isValid) {
       return NextResponse.json(
         { error: "Invalid admin credentials." },

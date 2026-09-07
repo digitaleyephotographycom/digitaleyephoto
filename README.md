@@ -26,12 +26,13 @@ there's no separate database to set up.
    - Scope it to just this bucket if you can.
    - Copy the **keyID** and **applicationKey** — the applicationKey is only
      shown once.
-5. Still in the bucket settings, add a **CORS Rule** (needed so the browser
-   can upload photos directly to B2):
-   - Allowed Origins: `*` (or your real domain once deployed)
-   - Allowed Operations: `s3_put`, `s3_get`, `s3_head`
-   - Allowed Headers: `*`
-   - Expose Headers: `ETag`
+5. Configure CORS on the bucket:
+   - Run `npm run setup:cors` (automatically configures the bucket using your `.env.local` credentials), OR
+   - Manually in Backblaze web console bucket settings:
+     - Allowed Origins: `*` (or your domain)
+     - Allowed Operations: `s3_put`, `s3_get`, `s3_head`, `s3_delete`
+     - Allowed Headers: `*`
+     - Expose Headers: `ETag`
 
 ## 2. Configure the app
 
