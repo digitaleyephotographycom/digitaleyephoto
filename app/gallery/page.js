@@ -37,7 +37,7 @@ function GalleryGateForm() {
       sessionStorage.setItem("gallery_token", data.token);
       sessionStorage.setItem("gallery_data", JSON.stringify(data.gallery));
       sessionStorage.setItem("gallery_loaded_at", String(Date.now()));
-      router.push("/gallery/view");
+      window.location.href = "/gallery/view";
     } catch {
       setError("Could not connect to server. Please try again.");
     } finally {
