@@ -47,19 +47,38 @@ export default function GalleryDetail() {
 
   async function copyText(text, successMsg) {
     if (!text) return;
-    try {
-      if (navigator?.clipboard?.writeText) {
+    let ok = false;
+    if (navigator?.clipboard?.writeText) {
+      try {
         await navigator.clipboard.writeText(text);
-      } else {
-        const input = document.createElement("input");
-        input.value = text;
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand("copy");
-        document.body.removeChild(input);
+        ok = true;
+      } catch {
+        ok = false;
       }
+    }
+    if (!ok) {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        textarea.style.top = "-9999px";
+        textarea.style.opacity = "0";
+        textarea.style.whiteSpace = "pre";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
       showToast(successMsg);
-    } catch {
+    } else {
       showToast("Unable to copy. Please copy manually.");
     }
   }
@@ -198,35 +217,171 @@ export default function GalleryDetail() {
 
   async function handleCopySelectedNames() {
     if (!gallery) return;
-    const photoMap = new Map((gallery.photos || []).map((p) => [p.id, p]));
-    const orderedSelectedPhotos = (gallery.selections || [])
-      .map((sid) => photoMap.get(sid))
-      .filter(Boolean);
 
-    if (orderedSelectedPhotos.length === 0) {
+    // 1. Gather all photos in this gallery
+    const allPhotos = Array.isArray(gallery.photos) ? gallery.photos : [];
+
+    // Helper to resolve the best source filename or identifier
+    const resolvePhotoFilename = (p, fallback) => {
+      if (p) {
+        if (p.sourceName && typeof p.sourceName === "string" && p.sourceName.trim()) {
+          const s = p.sourceName.trim();
+          if (s !== "photo.jpg") return s;
+        }
+        if (p.name && typeof p.name === "string" && p.name.trim()) {
+          const n = p.name.trim();
+          if (n !== "photo.jpg") return n;
+        }
+        if (p.key && typeof p.key === "string") {
+          const keyFile = p.key.split("/").pop() || "";
+          const dashIdx = keyFile.indexOf("-");
+          if (dashIdx > 0 && dashIdx < 20) {
+            const clean = keyFile.slice(dashIdx + 1).trim();
+            if (clean) return clean;
+          }
+          if (keyFile.trim()) return keyFile.trim();
+        }
+        if (p.id != null) return String(p.id).trim();
+      }
+      if (fallback != null && typeof fallback === "string" && fallback.trim()) {
+        return fallback.trim();
+      }
+      return "";
+    };
+
+    // Fast multi-attribute lookups
+    const photoById = new Map();
+    const photoByName = new Map();
+    for (const p of allPhotos) {
+      if (!p) continue;
+      if (p.id != null) {
+        photoById.set(String(p.id).trim(), p);
+      }
+      if (p.sourceName && typeof p.sourceName === "string") {
+        photoByName.set(p.sourceName.trim().toLowerCase(), p);
+      }
+      if (p.name && typeof p.name === "string") {
+        photoByName.set(p.name.trim().toLowerCase(), p);
+      }
+      if (p.key && typeof p.key === "string") {
+        const keyFile = p.key.split("/").pop() || "";
+        if (keyFile) {
+          photoByName.set(keyFile.toLowerCase(), p);
+          const dashIdx = keyFile.indexOf("-");
+          if (dashIdx > 0 && dashIdx < 20) {
+            photoByName.set(keyFile.slice(dashIdx + 1).toLowerCase(), p);
+          }
+        }
+      }
+    }
+
+    // Determine the ordered selection list (preserving client's selection sequence)
+    let selectionOrder = [];
+    if (Array.isArray(gallery.selections) && gallery.selections.length > 0) {
+      selectionOrder = gallery.selections;
+    } else if (Array.isArray(gallery.submittedSelections) && gallery.submittedSelections.length > 0) {
+      selectionOrder = gallery.submittedSelections;
+    } else if (typeof gallery.selections === "string" && gallery.selections.trim()) {
+      try {
+        const parsed = JSON.parse(gallery.selections);
+        if (Array.isArray(parsed)) selectionOrder = parsed;
+      } catch {
+        selectionOrder = gallery.selections.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+    }
+
+    const collectedNames = [];
+    const collectedIds = new Set();
+
+    // 1. Process items in their exact client selection order
+    for (const item of selectionOrder) {
+      if (!item) continue;
+      const itemId = typeof item === "object"
+        ? String(item.id || item.photoId || item.sourceName || item.name || "").trim()
+        : String(item).trim();
+
+      if (!itemId) continue;
+
+      const matched =
+        photoById.get(itemId) ||
+        photoByName.get(itemId.toLowerCase()) ||
+        (typeof item === "object" && item.id ? photoById.get(String(item.id).trim()) : null);
+
+      if (matched) {
+        collectedIds.add(String(matched.id).trim());
+        const filename = resolvePhotoFilename(matched, itemId);
+        if (filename) collectedNames.push(filename);
+      } else {
+        // Fallback to item ID / string itself if no direct photo record
+        collectedNames.push(itemId);
+      }
+    }
+
+    // 2. Guarantee that every photo currently displayed/marked as selected is included
+    for (const sp of selectedPhotos) {
+      if (sp && sp.id != null && !collectedIds.has(String(sp.id).trim())) {
+        collectedIds.add(String(sp.id).trim());
+        const filename = resolvePhotoFilename(sp, sp.id);
+        if (filename) collectedNames.push(filename);
+      }
+    }
+
+    // 3. Deduplicate filenames while strictly preserving selection order
+    const finalNames = [];
+    const seenNames = new Set();
+    for (const n of collectedNames) {
+      const clean = (n || "").trim();
+      if (clean && !seenNames.has(clean)) {
+        seenNames.add(clean);
+        finalNames.push(clean);
+      }
+    }
+
+    if (finalNames.length === 0) {
       showToast("No selected images to copy.");
       return;
     }
 
-    const textToCopy = orderedSelectedPhotos
-      .map((p) => p.sourceName || p.name || "photo.jpg")
-      .join("\n");
+    // 4. Strict format: EACH image name on a separate line (one name per line), NOT single continuous line
+    const textToCopy = finalNames.join("\n");
 
-    try {
-      if (navigator?.clipboard?.writeText) {
+    // 5. Reliable clipboard write with robust fallback
+    let copyOk = false;
+    if (navigator?.clipboard?.writeText) {
+      try {
         await navigator.clipboard.writeText(textToCopy);
-      } else {
-        const input = document.createElement("textarea");
-        input.value = textToCopy;
-        document.body.appendChild(input);
-        input.select();
-        document.execCommand("copy");
-        document.body.removeChild(input);
+        copyOk = true;
+      } catch {
+        copyOk = false;
       }
+    }
+
+    if (!copyOk) {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = textToCopy;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        textarea.style.top = "-9999px";
+        textarea.style.opacity = "0";
+        textarea.style.whiteSpace = "pre";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        copyOk = document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } catch {
+        copyOk = false;
+      }
+    }
+
+    if (copyOk) {
       setCopiedNames(true);
       setTimeout(() => setCopiedNames(false), 2200);
-      showToast(`✓ Copied ${orderedSelectedPhotos.length} image name${orderedSelectedPhotos.length === 1 ? "" : "s"}`);
-    } catch {
+      showToast(`✓ Copied ${finalNames.length} image name${finalNames.length === 1 ? "" : "s"}`);
+    } else {
       showToast("Unable to copy to clipboard.");
     }
   }
@@ -235,10 +390,11 @@ export default function GalleryDetail() {
     if (!gallery) return;
     setZipping(true);
     try {
+      const photoIdsToDownload = selectedPhotos.map((p) => p.id);
       const res = await fetch(`/api/galleries/${id}/download-zip`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoIds: gallery.selections }),
+        body: JSON.stringify({ photoIds: photoIdsToDownload.length > 0 ? photoIdsToDownload : gallery.selections }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -258,9 +414,31 @@ export default function GalleryDetail() {
   }
 
   const photos = gallery?.photos || [];
-  const selections = new Set(gallery?.selections || []);
-  const selectedPhotos = photos.filter((p) => selections.has(p.id));
-  const unselectedPhotos = photos.filter((p) => !selections.has(p.id));
+  const rawSelections = Array.isArray(gallery?.selections) && gallery.selections.length > 0
+    ? gallery.selections
+    : Array.isArray(gallery?.submittedSelections) && gallery.submittedSelections.length > 0
+    ? gallery.submittedSelections
+    : [];
+
+  const selections = new Set(
+    rawSelections
+      .map((sid) => (typeof sid === "object" ? String(sid?.id || sid?.photoId || sid?.name || "").trim() : String(sid).trim()))
+      .filter(Boolean)
+  );
+
+  const selectedPhotos = photos.filter((p) => {
+    if (!p) return false;
+    const pid = String(p.id).trim();
+    if (selections.has(pid)) return true;
+    if (p.sourceName && selections.has(p.sourceName.trim())) return true;
+    if (p.name && selections.has(p.name.trim())) return true;
+    if (p.key) {
+      const k = p.key.split("/").pop() || "";
+      if (selections.has(k)) return true;
+    }
+    return Boolean(p.selected || p.isSelected);
+  });
+  const unselectedPhotos = photos.filter((p) => !selectedPhotos.includes(p));
   const status = gallery?.status || "ACTIVE";
   const isLocked = Boolean(gallery?.selectionLocked);
 
@@ -591,7 +769,7 @@ export default function GalleryDetail() {
                 <AdminPhotoTile
                   key={p.id}
                   photo={p}
-                  isSelected={selections.has(p.id)}
+                  isSelected={selections.has(p.id) || selectedPhotos.some((sp) => sp.id === p.id)}
                 />
               ))}
             </div>
