@@ -3,6 +3,11 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
   reactStrictMode: true,
+  experimental: {
+    workerThreads: false,
+    cpus: 1,
+    serverComponentsExternalPackages: ["sharp", "archiver"],
+  },
   images: {
     formats: ["image/avif", "image/webp"],
     remotePatterns: [

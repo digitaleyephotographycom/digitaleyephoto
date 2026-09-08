@@ -30,11 +30,14 @@ export async function POST(req, { params }) {
       }
 
       for (const p of validItems) {
+        const sourceName = p.sourceName || p.name || "photo.jpg";
         gallery.photos.push({
           id: p.photoId,
           key: p.key,
           thumbKey: p.thumbKey || null,
-          name: p.name || "photo.jpg",
+          previewKey: p.previewKey || null,
+          name: sourceName,
+          sourceName,
         });
       }
 
@@ -55,7 +58,7 @@ export async function POST(req, { params }) {
     }
 
     // Single photo mode (backward compatibility)
-    const { photoId, key, thumbKey, name } = body || {};
+    const { photoId, key, thumbKey, previewKey, name, sourceName } = body || {};
 
     if (!photoId || !key) {
       return NextResponse.json(
@@ -64,11 +67,14 @@ export async function POST(req, { params }) {
       );
     }
 
+    const finalSourceName = sourceName || name || "photo.jpg";
     gallery.photos.push({
       id: photoId,
       key,
       thumbKey: thumbKey || null,
-      name: name || "photo.jpg",
+      previewKey: previewKey || null,
+      name: finalSourceName,
+      sourceName: finalSourceName,
     });
     await saveGallery(params.id, gallery);
 

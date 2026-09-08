@@ -28,6 +28,7 @@ export async function POST(req, { params }) {
           const safeName = (f.fileName || "photo.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
           const key = `galleries/${params.id}/${photoId}-${safeName}`;
           const thumbKey = `galleries/${params.id}/thumbs/${photoId}.webp`;
+          const previewKey = `galleries/${params.id}/previews/${photoId}.webp`;
 
           const origCommand = new PutObjectCommand({
             Bucket: bucket,
@@ -39,19 +40,27 @@ export async function POST(req, { params }) {
             Key: thumbKey,
             ContentType: "image/webp",
           });
+          const previewCommand = new PutObjectCommand({
+            Bucket: bucket,
+            Key: previewKey,
+            ContentType: "image/webp",
+          });
 
-          const [uploadUrl, thumbUploadUrl] = await Promise.all([
+          const [uploadUrl, thumbUploadUrl, previewUploadUrl] = await Promise.all([
             getSignedUrl(client, origCommand, { expiresIn: 1800 }),
             getSignedUrl(client, thumbCommand, { expiresIn: 1800 }),
+            getSignedUrl(client, previewCommand, { expiresIn: 1800 }),
           ]);
 
           return {
             photoId,
             key,
             thumbKey,
+            previewKey,
             fileName: f.fileName,
             uploadUrl,
             thumbUploadUrl,
+            previewUploadUrl,
           };
         })
       );
@@ -64,6 +73,7 @@ export async function POST(req, { params }) {
     const safeName = (fileName || "photo.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
     const key = `galleries/${params.id}/${photoId}-${safeName}`;
     const thumbKey = `galleries/${params.id}/thumbs/${photoId}.webp`;
+    const previewKey = `galleries/${params.id}/previews/${photoId}.webp`;
 
     const command = new PutObjectCommand({
       Bucket: bucket,
@@ -75,18 +85,27 @@ export async function POST(req, { params }) {
       Key: thumbKey,
       ContentType: "image/webp",
     });
+    const previewCommand = new PutObjectCommand({
+      Bucket: bucket,
+      Key: previewKey,
+      ContentType: "image/webp",
+    });
 
-    const [uploadUrl, thumbUploadUrl] = await Promise.all([
+    const [uploadUrl, thumbUploadUrl, previewUploadUrl] = await Promise.all([
       getSignedUrl(client, command, { expiresIn: 1800 }),
       getSignedUrl(client, thumbCommand, { expiresIn: 1800 }),
+      getSignedUrl(client, previewCommand, { expiresIn: 1800 }),
     ]);
 
     return NextResponse.json({
       uploadUrl,
       thumbUploadUrl,
+      previewUploadUrl,
       key,
       thumbKey,
+      previewKey,
       photoId,
+      fileName,
     });
   } catch (err) {
     console.error("Failed to generate upload URL:", err);

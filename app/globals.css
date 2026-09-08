@@ -780,11 +780,36 @@ button{cursor:pointer}
 }
 
 .pipe-scale-labels .scale-9 {
-  transform: translateX(-50%);
+  transform: translateX(-70%);
 }
 
 .pipe-scale-labels .scale-10 {
   right: 0;
+}
+
+.btn-danger-icon {
+  background: transparent;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  color: #dc2626;
+  border-radius: 8px;
+  padding: 7px 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-danger-icon:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.09);
+  border-color: #dc2626;
+  color: #b91c1c;
+  transform: translateY(-1px);
+}
+
+.btn-danger-icon:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 /* Cleanup Note */
@@ -931,8 +956,26 @@ button{cursor:pointer}
   .storage-pipe {
     height: 34px;
   }
+  .pipe-scale-labels {
+    font-size: 10px;
+    height: 16px;
+  }
+  .pipe-scale-labels .scale-9 {
+    /* Anchored cleanly to the left of the 90% marker to completely eliminate overlap with 10 GB */
+    transform: translateX(-100%);
+    margin-left: -5px;
+  }
   .client-access-card {
     padding: 12px 14px;
+  }
+}
+
+@media (max-width: 380px) {
+  .pipe-scale-labels {
+    font-size: 9px;
+  }
+  .pipe-scale-labels .scale-9 {
+    margin-left: -6px;
   }
 }
 

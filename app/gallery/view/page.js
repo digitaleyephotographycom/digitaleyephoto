@@ -22,7 +22,7 @@ const PhotoTile = memo(
       >
         <img
           src={imageUrl}
-          alt={photo.name}
+          alt="Photograph"
           loading="lazy"
           decoding="async"
         />
@@ -183,11 +183,28 @@ function PhotoViewer({
     touchStartYRef.current = null;
   }
 
+  // Preload immediate adjacent previews (1 next, 1 prev) for instantaneous swiping
+  useEffect(() => {
+    if (!isOpen || photos.length <= 1) return;
+    const nextPhoto = photos[(currentIndex + 1) % photos.length];
+    const prevPhoto = photos[(currentIndex - 1 + photos.length) % photos.length];
+    const nextUrl = nextPhoto?.previewUrl || nextPhoto?.thumbUrl || nextPhoto?.url;
+    const prevUrl = prevPhoto?.previewUrl || prevPhoto?.thumbUrl || prevPhoto?.url;
+    if (nextUrl) {
+      const imgNext = new Image();
+      imgNext.src = nextUrl;
+    }
+    if (prevUrl) {
+      const imgPrev = new Image();
+      imgPrev.src = prevUrl;
+    }
+  }, [isOpen, currentIndex, photos]);
+
   if (!isOpen || photos.length === 0) return null;
 
   const currentPhoto = photos[currentIndex] || photos[0];
   const isSelected = selected.has(currentPhoto.id);
-  const imageUrl = currentPhoto.thumbUrl || currentPhoto.url;
+  const imageUrl = currentPhoto.previewUrl || currentPhoto.thumbUrl || currentPhoto.url;
 
   return (
     <div className="photo-viewer-overlay" onClick={onClose}>
@@ -252,7 +269,7 @@ function PhotoViewer({
           >
             <img
               src={imageUrl}
-              alt={currentPhoto.name}
+              alt="Gallery photograph"
               decoding="async"
               className="photo-viewer-img"
             />
@@ -332,6 +349,7 @@ export default function GalleryView() {
   const [showUndoModal, setShowUndoModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
   const [toast, setToast] = useState("");
   const [undoHighlighted, setUndoHighlighted] = useState(false);
 
@@ -639,6 +657,38 @@ export default function GalleryView() {
     }
   }
 
+  async function handleDownloadClientZip() {
+    if (selected.size === 0) {
+      showToast("Select photos first to download.");
+      return;
+    }
+    setDownloadingZip(true);
+    try {
+      const token = sessionStorage.getItem("gallery_token");
+      const res = await fetch("/api/gallery-access/download-zip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, photoIds: Array.from(selected) }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.error || "Could not download photos ZIP.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(gallery.name || "selected_photos").replace(/\s+/g, "_")}_original.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      showToast("Failed to download ZIP.");
+    } finally {
+      setDownloadingZip(false);
+    }
+  }
+
   if (!gallery) return null;
 
   const renderedPhotos = displayedPhotos.slice(0, visibleCount);
@@ -707,27 +757,56 @@ export default function GalleryView() {
               </span>
             )}
           </div>
-          <button
-            type="button"
-            className="btn btn-soft btn-view"
-            onClick={() => handleOpenViewer(activeTab === "selected" ? "selected" : "all")}
-            disabled={activeTab === "selected" && selected.size === 0}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-soft btn-view"
+              onClick={() => handleOpenViewer(activeTab === "selected" ? "selected" : "all")}
+              disabled={activeTab === "selected" && selected.size === 0}
             >
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-            VIEW
-          </button>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              VIEW
+            </button>
+
+            {activeTab === "selected" && selected.size > 0 && (
+              <button
+                type="button"
+                className="btn btn-soft"
+                onClick={handleDownloadClientZip}
+                disabled={downloadingZip}
+                title="Download original high-quality photos as ZIP"
+                style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {downloadingZip ? "ZIPPING…" : "DOWNLOAD ZIP"}
+              </button>
+            )}
+          </div>
         </div>
 
         {isLocked && (

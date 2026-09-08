@@ -10,6 +10,9 @@ async function resolvePhotoUrls(photos, token) {
   return Promise.all(
     (photos || []).map(async (p) => {
       let thumbUrl = null;
+      let previewUrl = null;
+
+      // 1. Grid preview (1200px WebP)
       if (p.thumbKey) {
         try {
           thumbUrl = await signedUrlFor(p.thumbKey, 7200);
@@ -20,11 +23,22 @@ async function resolvePhotoUrls(photos, token) {
           thumbUrl = await signedUrlFor(p.key, 7200);
         } catch {}
       }
+
+      // 2. Full-Screen Viewer preview (2400px WebP)
+      if (p.previewKey) {
+        try {
+          previewUrl = await signedUrlFor(p.previewKey, 7200);
+        } catch {}
+      } else if (p.key) {
+        // Fallback for legacy galleries: high-res sharp preview
+        previewUrl = `/api/photos/thumb?key=${encodeURIComponent(p.key)}&w=2048&q=88&token=${encodeURIComponent(token || "")}`;
+      }
+
       return {
         id: p.id,
-        name: p.name,
-        thumbUrl,
-        url: thumbUrl,
+        thumbUrl: thumbUrl || previewUrl,
+        previewUrl: previewUrl || thumbUrl,
+        url: thumbUrl || previewUrl,
       };
     })
   );

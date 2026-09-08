@@ -39,6 +39,8 @@ export default function GalleryDetail() {
   const [newPassword, setNewPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [copiedNames, setCopiedNames] = useState(false);
 
   const toastTimerRef = useRef(null);
   const sentinelRef = useRef(null);
@@ -95,12 +97,21 @@ export default function GalleryDetail() {
   }
 
   async function load() {
-    const res = await fetch(`/api/galleries/${id}`);
-    if (res.status === 401) {
-      window.location.href = "/studio/login";
-      return;
+    setLoadError(false);
+    try {
+      const res = await fetch(`/api/galleries/${id}`);
+      if (res.status === 401) {
+        window.location.href = "/studio/login";
+        return;
+      }
+      if (res.ok) {
+        setGallery(await res.json());
+      } else {
+        setLoadError(true);
+      }
+    } catch {
+      setLoadError(true);
     }
-    if (res.ok) setGallery(await res.json());
   }
 
   async function handleLogout() {
@@ -185,6 +196,41 @@ export default function GalleryDetail() {
     }
   }
 
+  async function handleCopySelectedNames() {
+    if (!gallery) return;
+    const photoMap = new Map((gallery.photos || []).map((p) => [p.id, p]));
+    const orderedSelectedPhotos = (gallery.selections || [])
+      .map((sid) => photoMap.get(sid))
+      .filter(Boolean);
+
+    if (orderedSelectedPhotos.length === 0) {
+      showToast("No selected images to copy.");
+      return;
+    }
+
+    const textToCopy = orderedSelectedPhotos
+      .map((p) => p.sourceName || p.name || "photo.jpg")
+      .join("\n");
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = textToCopy;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      setCopiedNames(true);
+      setTimeout(() => setCopiedNames(false), 2200);
+      showToast(`✓ Copied ${orderedSelectedPhotos.length} image name${orderedSelectedPhotos.length === 1 ? "" : "s"}`);
+    } catch {
+      showToast("Unable to copy to clipboard.");
+    }
+  }
+
   async function handleDownloadZip() {
     if (!gallery) return;
     setZipping(true);
@@ -244,6 +290,43 @@ export default function GalleryDetail() {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [displayedPhotos.length]);
+
+  if (loadError) {
+    return (
+      <div className="admin-wrap">
+        <div className="topbar">
+          <div className="topbar-left">
+            <Link href="/studio" className="btn btn-ghost">
+              ← Back to Studio
+            </Link>
+          </div>
+          <div className="topbar-actions">
+            <button className="btn btn-ghost" onClick={handleLogout}>
+              Log out
+            </button>
+          </div>
+        </div>
+
+        <div style={{ maxWidth: 520, margin: "60px auto", textAlign: "center", background: "var(--paper)", padding: "36px 28px", borderRadius: "var(--radius)", border: "1px solid var(--line)", boxShadow: "0 10px 30px rgba(64,43,28,0.06)" }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: "var(--brown)" }}>Gallery Not Found or Corrupted</h2>
+          <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.5, marginBottom: 24 }}>
+            This gallery could not be loaded from storage. Its metadata record may have been moved, removed, or corrupted.
+          </p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <Link href="/studio" className="btn btn-ghost">
+              Return to Studio
+            </Link>
+            <button className="btn btn-danger" onClick={handleDelete}>
+              Delete Record from List
+            </button>
+          </div>
+        </div>
+
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    );
+  }
 
   if (!gallery) {
     return (
@@ -469,13 +552,26 @@ export default function GalleryDetail() {
           </div>
 
           {selectedPhotos.length > 0 && (
-            <button
-              className="btn btn-primary"
-              disabled={zipping}
-              onClick={handleDownloadZip}
-            >
-              {zipping ? "Zipping original photos…" : `Download ${selectedPhotos.length} selected as ZIP`}
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn btn-soft"
+                onClick={handleCopySelectedNames}
+                title="Copy all client-selected original filenames in selection order"
+                style={{ fontSize: "12px", padding: "8px 16px" }}
+              >
+                {copiedNames ? "✓ Copied" : "Copy Image Names"}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={zipping}
+                onClick={handleDownloadZip}
+              >
+                {zipping ? "Zipping original photos…" : `Download ${selectedPhotos.length} selected as ZIP`}
+              </button>
+            </div>
           )}
         </div>
 

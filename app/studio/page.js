@@ -63,6 +63,8 @@ export default function StudioDashboard() {
   const [storageInfo, setStorageInfo] = useState(null);
   const [storageLoading, setStorageLoading] = useState(false);
   const [storageError, setStorageError] = useState(false);
+  const [galleryToDelete, setGalleryToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   async function loadGalleries() {
     const res = await fetch("/api/galleries");
@@ -123,32 +125,88 @@ export default function StudioDashboard() {
 
   const [uploadProgress, setUploadProgress] = useState(null);
 
-  async function createClientThumbnail(file, maxWidth = 800, quality = 0.82) {
+  async function handleConfirmDelete() {
+    if (!galleryToDelete) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/galleries/${galleryToDelete.id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setGalleries((prev) => prev.filter((g) => g.id !== galleryToDelete.id));
+        showToast("Gallery deleted successfully.");
+        setGalleryToDelete(null);
+        loadStorage(true);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || "Could not delete gallery.");
+      }
+    } catch {
+      showToast("Failed to delete gallery.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function createClientPreviews(file) {
     return new Promise((resolve) => {
-      if (!file || !file.type.startsWith("image/")) return resolve(null);
+      if (!file || !file.type.startsWith("image/")) {
+        return resolve({ thumbBlob: null, previewBlob: null });
+      }
       const img = new Image();
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);
         try {
           const maxDim = Math.max(img.width, img.height);
-          const scale = maxDim > maxWidth ? maxWidth / maxDim : 1;
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.max(1, Math.round(img.width * scale));
-          canvas.height = Math.max(1, Math.round(img.height * scale));
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return resolve(null);
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => resolve(blob), "image/webp", quality);
-        } catch {
-          resolve(null);
+
+          // 1. High-Quality 2400px QHD Full-Screen Viewer Preview
+          const previewMax = 2400;
+          const previewScale = maxDim > previewMax ? previewMax / maxDim : 1;
+          const previewCanvas = document.createElement("canvas");
+          previewCanvas.width = Math.max(1, Math.round(img.width * previewScale));
+          previewCanvas.height = Math.max(1, Math.round(img.height * previewScale));
+          const pCtx = previewCanvas.getContext("2d");
+          if (pCtx) {
+            pCtx.imageSmoothingEnabled = true;
+            pCtx.imageSmoothingQuality = "high";
+            pCtx.drawImage(img, 0, 0, previewCanvas.width, previewCanvas.height);
+          }
+
+          // 2. Crisp 1200px Retina Grid Thumbnail (downscaled cleanly from preview)
+          const thumbMax = 1200;
+          const thumbScale = maxDim > thumbMax ? thumbMax / maxDim : 1;
+          const thumbCanvas = document.createElement("canvas");
+          thumbCanvas.width = Math.max(1, Math.round(img.width * thumbScale));
+          thumbCanvas.height = Math.max(1, Math.round(img.height * thumbScale));
+          const tCtx = thumbCanvas.getContext("2d");
+          if (tCtx) {
+            tCtx.imageSmoothingEnabled = true;
+            tCtx.imageSmoothingQuality = "high";
+            tCtx.drawImage(previewCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+          }
+
+          previewCanvas.toBlob(
+            (previewBlob) => {
+              thumbCanvas.toBlob(
+                (thumbBlob) => {
+                  resolve({ previewBlob, thumbBlob });
+                },
+                "image/webp",
+                0.85
+              );
+            },
+            "image/webp",
+            0.88
+          );
+        } catch (err) {
+          console.warn("Client preview generation error:", err);
+          resolve({ thumbBlob: null, previewBlob: null });
         }
       };
       img.onerror = () => {
         URL.revokeObjectURL(url);
-        resolve(null);
+        resolve({ thumbBlob: null, previewBlob: null });
       };
       img.src = url;
     });
@@ -214,7 +272,7 @@ export default function StudioDashboard() {
           if (!task) break;
           const { item, file } = task;
 
-          // 2a. Upload original photo
+          // 2a. Upload original photo (100% untouched master file)
           const uploadRes = await fetch(item.uploadUrl, {
             method: "PUT",
             headers: { "Content-Type": file.type || "application/octet-stream" },
@@ -224,20 +282,33 @@ export default function StudioDashboard() {
             throw new Error(`Failed to upload ${file.name}. Please check your connection and try again.`);
           }
 
-          // 2b. Generate and upload lightweight WebP thumbnail
-          if (item.thumbUploadUrl) {
-            try {
-              const thumbBlob = await createClientThumbnail(file, 800, 0.82);
-              if (thumbBlob) {
-                await fetch(item.thumbUploadUrl, {
+          // 2b. Generate and upload dual-tier optimized WebP previews
+          try {
+            const { previewBlob, thumbBlob } = await createClientPreviews(file);
+            const previewUploads = [];
+            if (item.previewUploadUrl && previewBlob) {
+              previewUploads.push(
+                fetch(item.previewUploadUrl, {
+                  method: "PUT",
+                  headers: { "Content-Type": "image/webp" },
+                  body: previewBlob,
+                })
+              );
+            }
+            if (item.thumbUploadUrl && thumbBlob) {
+              previewUploads.push(
+                fetch(item.thumbUploadUrl, {
                   method: "PUT",
                   headers: { "Content-Type": "image/webp" },
                   body: thumbBlob,
-                });
-              }
-            } catch (thumbErr) {
-              console.warn("Client thumbnail upload skipped for", file.name, thumbErr);
+                })
+              );
             }
+            if (previewUploads.length > 0) {
+              await Promise.all(previewUploads);
+            }
+          } catch (previewErr) {
+            console.warn("Client preview upload skipped for", file.name, previewErr);
           }
 
           completed++;
@@ -248,7 +319,9 @@ export default function StudioDashboard() {
             photoId: item.photoId,
             key: item.key,
             thumbKey: item.thumbKey,
+            previewKey: item.previewKey,
             name: file.name,
+            sourceName: file.name,
           });
         }
       });
@@ -795,10 +868,34 @@ export default function StudioDashboard() {
                             <Link
                               href={`/studio/${g.id}`}
                               className="btn btn-primary"
-                              style={{ padding: "8px 18px", fontSize: "12px" }}
+                              style={{ padding: "8px 16px", fontSize: "12px" }}
                             >
                               View
                             </Link>
+
+                            <button
+                              type="button"
+                              className="btn-danger-icon"
+                              title={`Delete ${displayName}`}
+                              onClick={() => setGalleryToDelete(g)}
+                              aria-label={`Delete ${displayName}`}
+                            >
+                              <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                <line x1="10" y1="11" x2="10" y2="17" />
+                                <line x1="14" y1="11" x2="14" y2="17" />
+                              </svg>
+                            </button>
                           </div>
                         </div>
                       );
@@ -854,6 +951,28 @@ export default function StudioDashboard() {
                             >
                               View
                             </Link>
+                            <button
+                              type="button"
+                              className="btn-danger-icon"
+                              title={`Delete ${title}`}
+                              onClick={() => setGalleryToDelete(g)}
+                              aria-label={`Delete ${title}`}
+                              style={{ padding: "4px 6px", flexShrink: 0 }}
+                            >
+                              <svg
+                                width="13"
+                                height="13"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                              </svg>
+                            </button>
                           </li>
                         );
                       })}
@@ -865,6 +984,41 @@ export default function StudioDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {galleryToDelete && (
+        <div
+          className="modal-overlay"
+          onClick={() => !deleting && setGalleryToDelete(null)}
+        >
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 26, marginBottom: 8 }}>🗑️</div>
+            <h3 style={{ margin: "0 0 8px 0" }}>Delete this gallery?</h3>
+            <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.5, margin: "0 0 20px 0" }}>
+              Are you sure you want to delete <strong>{galleryToDelete.customerName || galleryToDelete.name}</strong>?
+              This will permanently remove the gallery, selections, and all uploaded photos.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={deleting}
+                onClick={() => setGalleryToDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={deleting}
+                onClick={handleConfirmDelete}
+              >
+                {deleting ? "Deleting…" : "Delete gallery"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && <div className="toast">{toast}</div>}
     </>

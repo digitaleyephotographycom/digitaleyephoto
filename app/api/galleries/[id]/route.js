@@ -4,6 +4,7 @@ import {
   getGallery,
   saveGallery,
   deleteGalleryMeta,
+  deleteGalleryFiles,
   deleteObject,
   getIndex,
   saveIndex,
@@ -36,9 +37,15 @@ export async function GET(req, { params }) {
     safe.photos = await Promise.all(
       (safe.photos || []).map(async (photo) => {
         let thumbUrl = null;
+        let previewUrl = null;
         if (photo.thumbKey) {
           try {
             thumbUrl = await signedUrlFor(photo.thumbKey, 7200);
+          } catch {}
+        }
+        if (photo.previewKey) {
+          try {
+            previewUrl = await signedUrlFor(photo.previewKey, 7200);
           } catch {}
         }
         if (!thumbUrl && photo.key) {
@@ -46,10 +53,14 @@ export async function GET(req, { params }) {
             thumbUrl = await signedUrlFor(photo.key, 7200);
           } catch {}
         }
+        const sourceName = photo.sourceName || photo.name || "photo.jpg";
         return {
           ...photo,
-          thumbUrl,
-          url: thumbUrl,
+          sourceName,
+          name: sourceName,
+          thumbUrl: thumbUrl || previewUrl,
+          previewUrl: previewUrl || thumbUrl,
+          url: thumbUrl || previewUrl,
         };
       })
     );
@@ -151,24 +162,30 @@ export async function DELETE(req, { params }) {
 
   try {
     const gallery = await getGallery(params.id);
-    if (!gallery) {
-      return NextResponse.json({ error: "Gallery not found." }, { status: 404 });
-    }
-
-    for (const photo of gallery.photos || []) {
-      try {
-        if (photo.key) await deleteObject(photo.key);
-      } catch {
-        // best-effort cleanup — continue even if one file is already gone
+    if (gallery && Array.isArray(gallery.photos)) {
+      for (const photo of gallery.photos) {
+        try {
+          if (photo.key) await deleteObject(photo.key);
+          if (photo.thumbKey) await deleteObject(photo.thumbKey);
+          if (photo.previewKey) await deleteObject(photo.previewKey);
+        } catch {
+          // best-effort cleanup
+        }
       }
     }
+
+    // Purge any lingering files under galleries/${params.id}/ in B2
+    await deleteGalleryFiles(params.id);
+
+    // Delete gallery metadata file (best effort)
     await deleteGalleryMeta(params.id);
 
+    // Crucial: always remove the gallery from index.json
     const index = await getIndex();
-    index.galleries = index.galleries.filter((g) => g.id !== params.id);
+    index.galleries = (index.galleries || []).filter((g) => g.id !== params.id);
     await saveIndex(index);
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, id: params.id });
   } catch (err) {
     console.error("Failed to delete gallery:", err);
     return NextResponse.json(

@@ -1,19 +1,31 @@
 import archiver from "archiver";
 import { PassThrough, Readable } from "stream";
 import { getGallery } from "@/lib/store";
+import { verifyToken } from "@/lib/token";
 import { signedUrlFor } from "@/lib/b2";
-import { requireAdmin } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 
-export async function POST(req, { params }) {
-  const authError = await requireAdmin(req);
-  if (authError) return authError;
-
+export async function POST(req) {
   try {
-    const { photoIds } = await req.json();
-    const gallery = await getGallery(params.id);
+    const { token, photoIds } = await req.json();
 
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Session token required." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const payload = verifyToken(token);
+    if (!payload?.galleryId) {
+      return new Response(JSON.stringify({ error: "Invalid or expired session token." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const gallery = await getGallery(payload.galleryId);
     if (!gallery) {
       return new Response(JSON.stringify({ error: "Gallery not found." }), {
         status: 404,
@@ -21,11 +33,18 @@ export async function POST(req, { params }) {
       });
     }
 
-    const ids = Array.isArray(photoIds) ? photoIds : gallery.selections;
+    if (gallery.status === "DRAFT" || gallery.status === "ARCHIVED") {
+      return new Response(JSON.stringify({ error: "Gallery not currently accessible." }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const ids = Array.isArray(photoIds) && photoIds.length > 0 ? photoIds : gallery.selections;
     const photos = (gallery.photos || []).filter((p) => ids.includes(p.id));
 
     if (photos.length === 0) {
-      return new Response(JSON.stringify({ error: "No photos to zip." }), {
+      return new Response(JSON.stringify({ error: "No photos to download." }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -37,7 +56,7 @@ export async function POST(req, { params }) {
 
     const usedNames = new Set();
 
-    // Fetch each full-quality original from Backblaze using temporary signed GET URLs
+    // Fetch each full-quality original from Backblaze B2 using temporary signed GET URLs
     // and stream directly into the zip archive.
     (async () => {
       for (const photo of photos) {
@@ -64,23 +83,22 @@ export async function POST(req, { params }) {
 
           archive.append(buf, { name: filename });
         } catch (err) {
-          console.error("Failed to fetch original for ZIP:", photo.name, err);
-          // skip a photo that failed to fetch rather than failing the whole zip
+          console.error("Failed to fetch original for client ZIP:", photo.name, err);
         }
       }
       archive.finalize();
     })();
 
-    const safeName = (gallery.name || "gallery").replace(/\s+/g, "_");
+    const safeName = (gallery.name || "photos").replace(/\s+/g, "_");
 
     return new Response(Readable.toWeb(passthrough), {
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${safeName}_selected.zip"`,
+        "Content-Disposition": `attachment; filename="${safeName}_original.zip"`,
       },
     });
   } catch (err) {
-    console.error("ZIP download error:", err);
+    console.error("Client ZIP download error:", err);
     return new Response(JSON.stringify({ error: "Could not create ZIP archive." }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
