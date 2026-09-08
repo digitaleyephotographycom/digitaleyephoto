@@ -60,6 +60,10 @@ export default function StudioDashboard() {
     touchStartYRef.current = null;
   }
 
+  const [storageInfo, setStorageInfo] = useState(null);
+  const [storageLoading, setStorageLoading] = useState(false);
+  const [storageError, setStorageError] = useState(false);
+
   async function loadGalleries() {
     const res = await fetch("/api/galleries");
     if (res.status === 401) {
@@ -70,6 +74,25 @@ export default function StudioDashboard() {
     setGalleries(data.galleries || []);
   }
 
+  async function loadStorage(forceRefresh = false) {
+    setStorageLoading(true);
+    setStorageError(false);
+    try {
+      const url = `/api/admin/storage${forceRefresh ? "?refresh=true" : ""}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setStorageInfo(data);
+      } else {
+        setStorageError(true);
+      }
+    } catch {
+      setStorageError(true);
+    } finally {
+      setStorageLoading(false);
+    }
+  }
+
   async function handleLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
     window.location.href = "/studio/login";
@@ -77,6 +100,7 @@ export default function StudioDashboard() {
 
   useEffect(() => {
     loadGalleries();
+    loadStorage();
   }, []);
 
   const toastTimerRef = useRef(null);
@@ -157,7 +181,7 @@ export default function StudioDashboard() {
       });
       const created = await createRes.json().catch(() => ({}));
       if (!createRes.ok) {
-        throw new Error(created.error || `Could not create gallery (Server error ${createRes.status}).`);
+        throw new Error(created.error || "Could not create gallery. Please check details and try again.");
       }
 
       // Step 1: Request all upload URLs in a single fast batch
@@ -171,14 +195,14 @@ export default function StudioDashboard() {
       });
       if (!urlRes.ok) {
         const errData = await urlRes.json().catch(() => ({}));
-        throw new Error(errData.error || `Could not prepare uploads (Server error ${urlRes.status}).`);
+        throw new Error(errData.error || "Could not prepare photo uploads. Please try again.");
       }
       const { items } = await urlRes.json().catch(() => ({}));
       if (!items || items.length === 0) {
-        throw new Error("No upload URLs generated.");
+        throw new Error("No upload items generated.");
       }
 
-      // Step 2: Concurrently upload files to Backblaze B2 (pool of 4 parallel streams)
+      // Step 2: Concurrently upload files (pool of 4 parallel streams)
       let completed = 0;
       const uploadedPhotos = [];
       const concurrency = 4;
@@ -190,17 +214,17 @@ export default function StudioDashboard() {
           if (!task) break;
           const { item, file } = task;
 
-          // 2a. Upload original 4K photo directly to Backblaze B2
+          // 2a. Upload original photo
           const uploadRes = await fetch(item.uploadUrl, {
             method: "PUT",
             headers: { "Content-Type": file.type || "application/octet-stream" },
             body: file,
           });
           if (!uploadRes.ok) {
-            throw new Error(`Failed to upload ${file.name} to storage.`);
+            throw new Error(`Failed to upload ${file.name}. Please check your connection and try again.`);
           }
 
-          // 2b. Generate and upload lightweight WebP thumbnail directly to B2
+          // 2b. Generate and upload lightweight WebP thumbnail
           if (item.thumbUploadUrl) {
             try {
               const thumbBlob = await createClientThumbnail(file, 800, 0.82);
@@ -240,7 +264,7 @@ export default function StudioDashboard() {
       });
       if (!saveRes.ok) {
         const errData = await saveRes.json().catch(() => ({}));
-        throw new Error(errData.error || "Could not save photo records.");
+        throw new Error(errData.error || "Could not save gallery photos. Please try again.");
       }
 
       setName("");
@@ -299,6 +323,120 @@ export default function StudioDashboard() {
       </div>
 
       <div className="admin-wrap">
+        {/* Modern Animated Pipe Storage Progress Bar */}
+        <div className="storage-pipe-panel">
+          <div className="storage-pipe-header">
+            <div className="storage-pipe-title-group">
+              <span className="storage-pipe-title">STORAGE</span>
+              {storageInfo && !storageError && (
+                <span className="storage-pipe-meta">
+                  {storageInfo.usedFormatted} of {storageInfo.capacityFormatted}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              className={`storage-refresh-btn ${storageLoading ? "is-loading" : ""}`}
+              onClick={() => loadStorage(true)}
+              title="Refresh storage calculation"
+              disabled={storageLoading}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+              </svg>
+              <span>{storageLoading ? "Refreshing…" : "Refresh"}</span>
+            </button>
+          </div>
+
+          {storageError ? (
+            <div className="storage-error-note">
+              Storage information is temporarily unavailable.
+            </div>
+          ) : (
+            <div className="storage-pipe-wrap">
+              <div className="storage-pipe">
+                {/* Three Permanent Range Sections */}
+                <div
+                  className="pipe-zone zone-green"
+                  style={{ width: "50%" }}
+                  title="Normal Range (0 to 5 GB)"
+                />
+                <div
+                  className="pipe-zone zone-yellow"
+                  style={{ width: "40%" }}
+                  title="Moderate Range (5 to 9 GB)"
+                />
+                <div
+                  className="pipe-zone zone-red"
+                  style={{ width: "10%" }}
+                  title="High Range (9 to 10 GB)"
+                />
+
+                {/* Permanent Range Dividers */}
+                <div className="pipe-divider" style={{ left: "50%" }} />
+                <div className="pipe-divider" style={{ left: "90%" }} />
+
+                {/* Animated Fill Indicator */}
+                <div
+                  className={`pipe-fill ${
+                    (storageInfo?.percentage || 0) > 90
+                      ? "fill-red"
+                      : (storageInfo?.percentage || 0) > 50
+                      ? "fill-yellow"
+                      : "fill-green"
+                  }`}
+                  style={{
+                    width: `${
+                      storageInfo
+                        ? Math.max(1.2, Math.min(100, storageInfo.percentage))
+                        : 0.8
+                    }%`,
+                  }}
+                >
+                  <div className="pipe-fill-shine" />
+                </div>
+
+                {/* Value Label Positioned Inside the Bar */}
+                <div className="pipe-label-inside">
+                  <span className="pipe-usage-badge">
+                    {storageLoading
+                      ? "CALCULATING…"
+                      : storageInfo?.usedFormatted
+                      ? `${storageInfo.usedFormatted.toUpperCase()} USED`
+                      : "STORAGE"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Range Scale Markers (0 GB, 5 GB, 9 GB, 10 GB) */}
+              <div className="pipe-scale-labels">
+                <span className="scale-label scale-0">0 GB</span>
+                <span className="scale-label scale-5" style={{ left: "50%" }}>
+                  5 GB
+                </span>
+                <span className="scale-label scale-9" style={{ left: "90%" }}>
+                  9 GB
+                </span>
+                <span className="scale-label scale-10">10 GB</span>
+              </div>
+            </div>
+          )}
+
+          {/* Cleanup Note */}
+          <div className="storage-cleanup-note">
+            <span className="storage-note-icon">ⓘ</span> Storage cleanup may take up to 2 days after deleting files.
+          </div>
+        </div>
+
         <div className="page-head">
           <div>
             <div className="eyebrow">Studio workspace</div>

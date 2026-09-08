@@ -34,9 +34,65 @@ export default function GalleryDetail() {
   const [toast, setToast] = useState("");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
 
   const toastTimerRef = useRef(null);
   const sentinelRef = useRef(null);
+
+  async function copyText(text, successMsg) {
+    if (!text) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const input = document.createElement("input");
+        input.value = text;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      showToast(successMsg);
+    } catch {
+      showToast("Unable to copy. Please copy manually.");
+    }
+  }
+
+  async function handleSavePassword(e) {
+    if (e) e.preventDefault();
+    if (!newPassword.trim()) {
+      showToast("Please enter a new password.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const res = await fetch(`/api/admin/galleries/${id}/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || "Could not update password.");
+        return;
+      }
+      setGallery((prev) => ({
+        ...prev,
+        clientPassword: data.password,
+      }));
+      setShowPasswordModal(false);
+      setNewPassword("");
+      showToast("Gallery password successfully updated.");
+    } catch {
+      showToast("Unable to update password. Please try again.");
+    } finally {
+      setSavingPassword(false);
+    }
+  }
 
   async function load() {
     const res = await fetch(`/api/galleries/${id}`);
@@ -88,7 +144,7 @@ export default function GalleryDetail() {
         showToast(patch.selectionLocked ? "Selections locked for client" : "Selections unlocked for client");
       }
     } catch {
-      showToast("Network error. Please try again.");
+      showToast("Unable to save changes. Please try again.");
     } finally {
       setUpdating(false);
     }
@@ -297,17 +353,95 @@ export default function GalleryDetail() {
             </div>
           </div>
 
-          <div className="link-row" style={{ marginTop: 18 }}>
-            <span>Gallery code: <code>{gallery.code}</code></span>
-            <span>·</span>
-            <span>Password: <em>Protected (set at creation)</em></span>
-            <span>·</span>
-            <span>
-              Submission:{" "}
-              {gallery.selectionSubmittedAt
-                ? `Submitted on ${new Date(gallery.selectionSubmittedAt).toLocaleDateString()}`
-                : "Not submitted yet"}
-            </span>
+          {/* Client Credentials & Access Information (ADMIN ONLY) */}
+          <div className="client-access-card" style={{ marginTop: 20 }}>
+            <div className="access-field">
+              <div className="access-label">GALLERY CODE</div>
+              <div className="access-value-row">
+                <span className="access-code-prominent">{gallery.code}</span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => copyText(gallery.code, "Gallery code copied to clipboard")}
+                >
+                  Copy Code
+                </button>
+              </div>
+            </div>
+
+            <div className="access-field">
+              <div className="access-label">PASSWORD</div>
+              <div className="access-value-row">
+                {gallery.clientPassword ? (
+                  <>
+                    <span className="access-pass-prominent">
+                      {showPassword ? gallery.clientPassword : "••••••••••"}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm btn-icon"
+                      onClick={() => setShowPassword(!showPassword)}
+                      title={showPassword ? "Hide password" : "Show password"}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                          <line x1="1" y1="1" x2="23" y2="23" />
+                        </svg>
+                      ) : (
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => copyText(gallery.clientPassword, "Password copied to clipboard")}
+                    >
+                      Copy
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-soft btn-sm"
+                      onClick={() => {
+                        setNewPassword("");
+                        setShowPasswordModal(true);
+                      }}
+                    >
+                      Change Password
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="access-pass-unavailable">Password unavailable</span>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        setNewPassword("");
+                        setShowPasswordModal(true);
+                      }}
+                    >
+                      Set New Password
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="access-field access-status-meta">
+              <div className="access-label">SUBMISSION STATUS</div>
+              <div className="access-value-row">
+                <span>
+                  {gallery.selectionSubmittedAt
+                    ? `Submitted on ${new Date(gallery.selectionSubmittedAt).toLocaleDateString()}`
+                    : "Not submitted yet"}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -377,6 +511,84 @@ export default function GalleryDetail() {
           </>
         )}
       </div>
+
+      {/* Change / Set Password Modal */}
+      {showPasswordModal && (
+        <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h3>{gallery?.clientPassword ? "Change Gallery Password" : "Set Gallery Password"}</h3>
+            <p>
+              Set a new access password for <strong>{gallery?.title}</strong>. The client will need this password together with gallery code <code>{gallery?.code}</code> to sign in.
+            </p>
+            <form onSubmit={handleSavePassword}>
+              <div style={{ position: "relative", margin: "16px 0 20px" }}>
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  className="input"
+                  style={{ width: "100%", paddingRight: 40, boxSizing: "border-box" }}
+                  placeholder="Enter new password (min. 4 characters)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoFocus
+                  required
+                  minLength={4}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  style={{
+                    position: "absolute",
+                    right: 10,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 4,
+                    color: "var(--muted)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  title={showNewPassword ? "Hide password" : "Show password"}
+                  aria-label={showNewPassword ? "Hide password" : "Show password"}
+                >
+                  {showNewPassword ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setShowPasswordModal(false);
+                    setNewPassword("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={savingPassword || !newPassword.trim()}
+                >
+                  {savingPassword ? "Saving…" : "Save Password"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (

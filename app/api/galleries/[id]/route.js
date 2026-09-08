@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import {
   getGallery,
   saveGallery,
@@ -9,6 +10,7 @@ import {
 } from "@/lib/store";
 import { signedUrlFor } from "@/lib/b2";
 import { requireAdmin } from "@/lib/admin-auth";
+import { encryptPassword, decryptPassword } from "@/lib/crypto-pass";
 
 export const runtime = "nodejs";
 
@@ -23,6 +25,14 @@ export async function GET(req, { params }) {
     }
 
     const { passwordHash, ...safe } = gallery;
+    if (gallery.encPassword) {
+      safe.clientPassword = decryptPassword(gallery.encPassword);
+      delete safe.encPassword;
+    } else if (gallery.clientPassword) {
+      safe.clientPassword = gallery.clientPassword;
+    } else {
+      safe.clientPassword = null;
+    }
     safe.photos = await Promise.all(
       (safe.photos || []).map(async (photo) => {
         let thumbUrl = null;
@@ -64,7 +74,7 @@ export async function PATCH(req, { params }) {
     }
 
     const body = await req.json();
-    const { status, selectionLocked, name, customerName, eventDate, type } = body || {};
+    const { status, selectionLocked, name, customerName, eventDate, type, password } = body || {};
 
     const validStatuses = ["DRAFT", "ACTIVE", "SELECTION_SUBMITTED", "COMPLETED", "ARCHIVED"];
 
@@ -94,6 +104,11 @@ export async function PATCH(req, { params }) {
     if (type !== undefined && type.trim()) {
       gallery.type = type.trim();
     }
+    if (password !== undefined && password.trim()) {
+      gallery.passwordHash = await bcrypt.hash(password.trim(), 10);
+      gallery.encPassword = encryptPassword(password.trim());
+      delete gallery.clientPassword;
+    }
 
     await saveGallery(params.id, gallery);
 
@@ -116,6 +131,10 @@ export async function PATCH(req, { params }) {
     }
 
     const { passwordHash, ...safe } = gallery;
+    if (gallery.encPassword) {
+      safe.clientPassword = decryptPassword(gallery.encPassword);
+      delete safe.encPassword;
+    }
     return NextResponse.json(safe);
   } catch (err) {
     console.error("Failed to update gallery:", err);

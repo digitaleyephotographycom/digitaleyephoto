@@ -32,7 +32,7 @@ export default function StudioLogin() {
       }
       window.location.href = "/studio";
     } catch {
-      setError("Unable to connect to the server. Please try again.");
+      setError("Unable to sign in. Please try again.");
     } finally {
       setBusy(false);
     }

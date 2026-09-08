@@ -4,6 +4,7 @@ import { getIndex, saveIndex, saveGallery } from "@/lib/store";
 import { newId, genCode } from "@/lib/ids";
 import { signedUrlFor } from "@/lib/b2";
 import { requireAdmin } from "@/lib/admin-auth";
+import { encryptPassword } from "@/lib/crypto-pass";
 
 export const runtime = "nodejs";
 
@@ -75,6 +76,7 @@ export async function POST(req) {
       selectionLocked: false,
       selectionSubmittedAt: null,
       passwordHash,
+      encPassword: encryptPassword(password.trim()),
       photos: [],
       selections: [],
       createdAt: Date.now(),

@@ -14,6 +14,33 @@ function GalleryGateForm() {
 
   useEffect(() => {
     router.prefetch("/gallery/view");
+    const tokenParam = searchParams.get("token");
+    if (tokenParam) {
+      setBusy(true);
+      fetch("/api/gallery-access", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: tokenParam }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.gallery) {
+            sessionStorage.setItem("gallery_token", data.token);
+            sessionStorage.setItem("gallery_data", JSON.stringify(data.gallery));
+            sessionStorage.setItem("gallery_loaded_at", String(Date.now()));
+            window.location.href = "/gallery/view";
+          } else {
+            setError("Invalid or expired gallery link.");
+            setBusy(false);
+          }
+        })
+        .catch(() => {
+          setError("Unable to access gallery.");
+          setBusy(false);
+        });
+      return;
+    }
+
     const codeParam = searchParams.get("code");
     if (codeParam) {
       setCode(codeParam.toUpperCase());
@@ -39,7 +66,7 @@ function GalleryGateForm() {
       sessionStorage.setItem("gallery_loaded_at", String(Date.now()));
       window.location.href = "/gallery/view";
     } catch {
-      setError("Could not connect to server. Please try again.");
+      setError("Unable to open gallery. Please try again.");
     } finally {
       setBusy(false);
     }
